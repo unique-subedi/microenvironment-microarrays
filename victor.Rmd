@@ -1,0 +1,245 @@
+---
+title: "Project 1"
+output: html_document
+date: "2022-09-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tools)
+```
+
+```{r read_data, cache=TRUE, echo=FALSE, message=FALSE}
+rm(list = ls())
+walk(
+  dir("data/", full.names = TRUE),
+  function(file) {
+    assign(file_path_sans_ext(basename(file)), read_tsv(file), .GlobalEnv)
+  }
+)
+tbls <- as.list.environment(.GlobalEnv, sorted = TRUE)
+```
+
+```{r}
+LI8X00510_Level2 %>%
+  select(
+    -c(Barcode, Well, Spot, contains("ECM2"), starts_with("Drug1"),
+       Spot_PA_SpotCellCount_SE)
+  ) %>%
+  View()
+```
+
+## EDA
+
+There are as many files as expected.
+```{r num_files}
+length(tbls)
+```
+
+The name of each file matches the pattern below.
+```{r filename_pattern}
+tbls %>% names() %>% str_detect("^LI8X005\\d{2}_Level2$") %>% all()
+```
+
+The files are numbered consecutively, except two numbers are skipped. Maybe they were skipped so that the staining sets can be identified? The skipped numbers divide the IDs into three batches of eight.
+```{r file_numbering}
+tbls %>%
+  names() %>%
+  str_extract("5\\d{2}") %>%
+  as.integer() %>%
+  {
+    seq_ <- seq(min(.), max(.), by = 1)
+    setdiff(seq_, .)
+  }
+```
+
+As expected, there are eight wells for each plate.
+```{r well_numbers}
+map_lgl(
+  tbls,
+  . %>% pull(WellIndex) %>% unique() %>% near(seq_len(8)) %>% all()
+) %>%
+  all()
+```
+
+There are no missing values in `ArrayRow` or `ArrayColumn`.
+```{r nas_in_array_row_col}
+map_dfr(
+  tbls,
+  . %>% summarize(across(c(ArrayRow, ArrayColumn), ~ sum(is.na(.x))))
+) %>%
+  unique()
+```
+
+There is one row for each well-row-column triple.
+```{r well_row_col_triples}
+map_lgl(
+  tbls,
+  ~ all(count(.x, WellIndex, ArrayRow, ArrayColumn)$n == 1)
+) %>%
+  all()
+```
+
+`Spot` is related to `ArrayRow` and `ArrayColumn` in the expected way.
+```{r spot_arrayrow_arraycol}
+map_lgl(
+  tbls,
+  ~ .x %>%
+    mutate(Spot2 = max(ArrayColumn) * (ArrayRow - 1) + ArrayColumn - 1) %>%
+    summarize(are_equal = all(near(Spot2, Spot - 1))) %>%
+    pull()
+) %>%
+  all()
+```
+
+The filenames and barcodes are essentially the same.
+```{r barcodes}
+imap_lgl(
+  tbls,
+  ~ identical(unique(.x$Barcode), str_remove(.y, "_Level2$"))
+) %>%
+  all()
+```
+
+The ECM2 columns are the same across all wells.
+```{r ECM2}
+map(
+  tbls,
+  ~ unique(select(.x, contains("ECM2")))
+) %>%
+  unique()
+```
+
+The Drug1 columns are the same across all wells.
+```{r Drug1}
+map(
+  tbls,
+  ~ unique(select(.x, starts_with("Drug1")))
+) %>%
+  unique()
+```
+
+There seems to be just one column with stain information.
+```{r stain_cols}
+map(
+  tbls,
+  ~ names(select(.x, contains("stain")))
+) %>%
+  unique()
+```
+
+As expected, each plate has one stain.
+```{r num_staining_sets_per_plate}
+map(tbls, ~ n_distinct(.x$StainingSet)) %>% unique()
+```
+
+There are eight plates for each stain.
+```{r num_plates_per_staining_set}
+map_chr(tbls, ~ .x$StainingSet[1]) %>% table()
+```
+
+There are three count columns in each file.
+```{r count_cols}
+map(
+  tbls,
+  ~ names(select(.x, contains("count")))
+) %>%
+  unique()
+```
+
+`Spot_PA_SpotCellCount_SE` always equals zero.
+```{r Spot_PA_SpotCellCount_SE}
+map_lgl(
+  tbls,
+  . %>% pull(Spot_PA_SpotCellCount_SE) %>% near(0) %>% all()
+) %>%
+  all()
+```
+
+`Spot_PA_ReplicateCount` seems to have something to do with the reuse of ECMPs within wells since its maximum value is 15. How should this column be interpreted?
+```{r Spot_PA_ReplicateCount}
+map(
+  tbls,
+  . %>%
+    pull(Spot_PA_ReplicateCount) %>%
+    table() %>%
+    proportions() %>%
+    sort(decreasing = TRUE) %>%
+    cumsum() %>%
+    signif(digits = 2)
+)
+```
+
+```{r}
+map_dfr(
+  tbls,
+  ~ summarize(
+    .x,
+    stain = StainingSet[1],
+    num_nas = sum(is.na(Spot_PA_SpotCellCount)),
+    min_ct = min(Spot_PA_SpotCellCount, na.rm = TRUE),
+    max_ct = max(Spot_PA_SpotCellCount, na.rm = TRUE),
+  ),
+  .id = "tbl"
+)
+```
+
+The cell count distributions for the different staining sets are quite different.
+```{r cell_count_dists}
+tbls %>%
+  map_dfr(~ select(.x, StainingSet, Spot_PA_SpotCellCount), .id = "tbl") %>%
+  ggplot(aes(Spot_PA_SpotCellCount, color = StainingSet)) +
+  geom_freqpoly() +
+  labs(x = "Cell Count", y = "Number of Spots", color = "Staining Set") +
+  theme_bw()
+```
+
+```{r}
+LI8X00510_Level2 %>%
+  filter(WellIndex == 1) %>%
+  select(ArrayRow, ArrayColumn, Spot_PA_SpotCellCount) %>%
+  ggplot(aes(ArrayRow, ArrayColumn, fill = Spot_PA_SpotCellCount)) +
+  geom_tile() +
+  theme_bw()
+```
+
+The counts for well 3 are lower than for the other wells. There are also fewer spots for that well than for the other wells.
+```{r}
+LI8X00510_Level2 %>%
+  ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
+  facet_wrap(vars(WellIndex)) +
+  geom_tile() +
+  labs(fill = "Cell Count") +
+  theme_bw()
+```
+
+```{r}
+LI8X00510_Level2 %>%
+  group_by(WellIndex) %>%
+  summarize(num_spots = n())
+```
+
+
+```{r}
+LI8X00510_Level2 %>%
+  select(WellIndex, ArrayRow, ArrayColumn, Spot_PA_SpotCellCount) %>%
+  nest(count_tbl = !WellIndex) %>%
+  mutate(
+    heatmap = map2(
+      WellIndex,
+      count_tbl,
+      ~ .y %>%
+        ggplot(aes(ArrayRow, ArrayColumn, fill = Spot_PA_SpotCellCount)) +
+        geom_tile() +
+        labs(fill = "Cell Count", title = .x) +
+        theme_bw()
+    )
+  )
+```
+
+```{r}
+tbl %>%
+  select(where(~ n_distinct(.x) == 1)) %>%
+  slice(1)
+```
