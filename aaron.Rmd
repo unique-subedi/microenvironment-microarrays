@@ -1,0 +1,33 @@
+---
+title: "aaron"
+output: html_document
+date: "2022-09-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r read_data, cache=TRUE, echo=FALSE, message=FALSE}
+rm(list = ls())
+walk(
+  dir("Data/", full.names = TRUE),
+  function(file) {
+    assign(file_path_sans_ext(basename(file)), read_tsv(file), .GlobalEnv)
+  }
+)
+tbls <- as.list.environment(.GlobalEnv, sorted = TRUE)
+```
+
+```{r}
+for(plate in tbls){
+  print(plate %>%
+  ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
+  facet_wrap(vars(WellIndex)) +
+  geom_tile() +
+  labs(fill = "Cell Count") +
+  theme_bw()
+  )
+}
+
+```
