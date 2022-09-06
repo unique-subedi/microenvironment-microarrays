@@ -19,15 +19,90 @@ walk(
 tbls <- as.list.environment(.GlobalEnv, sorted = TRUE)
 ```
 
-```{r}
-for(plate in tbls){
-  print(plate %>%
-  ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
-  facet_wrap(vars(WellIndex)) +
-  geom_tile() +
-  labs(fill = "Cell Count") +
-  theme_bw()
+Position on the plate seems to affect cell count as evidenced by splotches of low or NA (0?) cell count. Might want to account for this somehow.
+
+```{r, fig.width=12, fig.height=10}
+for(i in seq_along(tbls)){
+  print(tbls[[i]] %>%
+    ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
+    facet_wrap(vars(WellIndex, Ligand1)) +
+    geom_tile() +
+    labs(fill = "Cell Count", title = i) +
+    theme_bw()
   )
 }
-
 ```
+
+Cell count summary stats.
+
+```{r}
+cell_ct_summary = sapply(tbls, function(x) 
+    summary(x$Spot_PA_SpotCellCount)
+  ) %>%
+  t() %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "plate")
+cell_ct_summary
+```
+
+Median cell count highest for staining set 3. 
+
+```{r}
+lapply(seq_along(tbls), function(x)
+  data.frame(plate = x, ct = tbls[[x]]$Spot_PA_SpotCellCount)
+) %>%
+  bind_rows() -> ct_df
+
+ggplot(ct_df, mapping = aes(x = as.factor(plate), y = ct)) + 
+  geom_boxplot() + 
+  xlab("Plate number") + 
+  ylab("Cell count")
+
+ggplot(ct_df, mapping = aes(x = as.factor(plate), y = ct)) + 
+  geom_violin() + 
+  xlab("Plate number") + 
+  ylab("Cell count")
+```
+
+Average cell counts grouped by stain/ecmp/ligand.
+
+```{r}
+lapply(seq_along(tbls), function(x)
+  data.frame(stain = ceiling(x/8),
+             ecmp = tbls[[x]]$ECMp,
+             ligand = tbls[[x]]$Ligand1,
+             ct = tbls[[x]]$Spot_PA_SpotCellCount)
+)  %>%
+  bind_rows() %>%
+  group_by(stain, ecmp, ligand) %>%
+  summarise(mean = mean(ct), median = median(ct)) %>%
+  arrange(mean) -> ct_sel_summary_df
+head(ct_sel_summary_df)
+tail(ct_sel_summary_df)
+```
+
+Average cell counts grouped by stain/ligand.
+
+```{r}
+lapply(seq_along(tbls), function(x)
+  data.frame(stain = ceiling(x/8),
+             ecmp = tbls[[x]]$ECMp,
+             ligand = tbls[[x]]$Ligand1,
+             ct = tbls[[x]]$Spot_PA_SpotCellCount)
+)  %>%
+  bind_rows() %>%
+  group_by(stain, ligand) %>%
+  summarise(mean = mean(ct), median = median(ct)) %>%
+  arrange(mean) -> ct_sl_summary_df
+ct_sl_summary_df
+```
+
+
+
+
+
+
+
+
+
+
