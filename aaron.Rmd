@@ -6,6 +6,8 @@ date: "2022-09-06"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tools)
 ```
 
 ```{r read_data, cache=TRUE, echo=FALSE, message=FALSE}
