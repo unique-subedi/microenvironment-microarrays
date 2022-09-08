@@ -6,22 +6,41 @@ date: "2022-09-01"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(GGally)
+library(gridExtra)
 library(tidyverse)
 library(tools)
+library(vctrs)
 ```
 
-```{r read_data, cache=TRUE, echo=FALSE, message=FALSE}
-rm(list = ls())
-walk(
-  dir("Data/", full.names = TRUE),
-  function(file) {
-    assign(file_path_sans_ext(basename(file)), read_tsv(file), .GlobalEnv)
-  }
-)
-tbls <- as.list.environment(.GlobalEnv, sorted = TRUE)
+## Read the data
+
+Make one tibble with all of the data.
+```{r make_all_data, cache=TRUE, message=FALSE}
+files <- dir("Data/", full.names = TRUE)
+names(files) <- file_path_sans_ext(basename(files))
+all_data <- map_dfr(files, read_tsv, .id = "plate")
 ```
 
-```{r}
+There seems to be just one column with staining set information.
+```{r find_stain_cols}
+select(all_data, contains("stain"))
+```
+
+Discard columns that only have missing values.
+```{r drop_na_only_cols}
+drop_na_only_cols <- function(tbl) select(tbl, !where(~ all(is.na(.x))))
+all_data <- drop_na_only_cols(all_data)
+```
+
+Create one tibble for each staining set.
+```{r make_all_data2, cache=TRUE}
+all_data2 <- all_data %>%
+  nest(data = !StainingSet) %>%
+  mutate(data = map(data, drop_na_only_cols))
+```
+
+```{r view, eval=FALSE}
 LI8X00510_Level2 %>%
   select(
     -c(Barcode, Well, Spot, contains("ECM2"), starts_with("Drug1"),
@@ -30,22 +49,24 @@ LI8X00510_Level2 %>%
   View()
 ```
 
-## EDA
+## Do EDA
 
-There are as many files as expected.
-```{r num_files}
-length(tbls)
+There are as many plates as expected.
+```{r check_num_plates}
+all_data %>%
+  group_by(StainingSet) %>%
+  summarize(num_plates = n_distinct(plate))
 ```
 
-The name of each file matches the pattern below.
-```{r filename_pattern}
-tbls %>% names() %>% str_detect("^LI8X005\\d{2}_Level2$") %>% all()
+The name of each plate matches the pattern below.
+```{r check_plate_name_pattern}
+all_data %>% pull(plate) %>% str_detect("^LI8X005\\d{2}_Level2$") %>% all()
 ```
 
-The files are numbered consecutively, except two numbers are skipped. Maybe they were skipped so that the staining sets can be identified? The skipped numbers divide the IDs into three batches of eight.
-```{r file_numbering}
-tbls %>%
-  names() %>%
+The plates are numbered consecutively, except two numbers are skipped. Maybe they were skipped to provide another way to separate the plates into staining sets? The skipped numbers divide the plates into three batches of eight.
+```{r check_plate_numbering}
+all_data %>%
+  pull(plate) %>%
   str_extract("5\\d{2}") %>%
   as.integer() %>%
   {
@@ -55,34 +76,191 @@ tbls %>%
 ```
 
 As expected, there are eight wells for each plate.
-```{r well_numbers}
-map_lgl(
-  tbls,
-  . %>% pull(WellIndex) %>% unique() %>% near(seq_len(8)) %>% all()
-) %>%
-  all()
+```{r check_well_numbers}
+all_data %>%
+  group_by(StainingSet, plate) %>%
+  summarize(num_wells = n_distinct(Well))
+```
+
+There are several columns with ligand information. 56 different ligands were used in the experiment. There are several columns with 57 values - probably the extra value represents the absence of a ligand. I'll use `Ligand`.
+```{r find_ligand_cols}
+summarize(all_data, across(contains("ligand"), n_distinct, na.rm = TRUE))
+
+all_data %>%
+  select(contains("ligand") & where(~ n_distinct(.x, na.rm = TRUE) >= 56)) %>%
+  distinct()
+```
+
+There was one control well on each plate, so there should be one ligand code that is present for each plate. For each ligand variable, the only such code is given below.
+```{r find_control_ligand}
+all_data %>%
+  group_by(plate) %>%
+  summarize(ligands = list(unique(Ligand))) %>%
+  pull(ligands) %>%
+  reduce(intersect)
+all_data %>%
+  group_by(plate) %>%
+  summarize(ligands = list(unique(Ligand1))) %>%
+  pull(ligands) %>%
+  reduce(intersect)
+all_data %>%
+  group_by(plate) %>%
+  summarize(ligands = list(unique(Ligand1Lx))) %>%
+  pull(ligands) %>%
+  reduce(intersect)
+all_data %>%
+  group_by(plate) %>%
+  summarize(ligands = list(unique(Ligand1An))) %>%
+  pull(ligands) %>%
+  reduce(intersect)
+```
+
+For each staining set, only a few columns have missing values; these columns are the same across staining sets. They are only missing a small proportion of their
+values.
+```{r find_cols_w_nas}
+find_cols_w_nas <- function(data) {
+  data %>%
+    summarize(across(.fns = ~ mean(is.na(.x)))) %>%
+    select(where(~ .x > 0))
+}
+all_data2 %>%
+  mutate(map(data, find_cols_w_nas)) %>%
+  pull()
+```
+
+When an `ECM2` column is missing a value, `ECMp` is collagen, which makes sense.
+```{r examine_cols_w_nas1}
+check_ECM2_cols_w_nas <- function(data) {
+  data %>%
+    select(ECMp, contains("ECM2")) %>%
+    filter(!vec_detect_complete(.)) %>%
+    pull(ECMp) %>%
+    table() %>%
+    sort(decreasing = TRUE) 
+}
+all_data2 %>%
+  mutate(map(data, check_ECM2_cols_w_nas)) %>%
+  pull()
+```
+
+When `ECM1Lx` is missing a value, `ECMp` is either `ELN|3` or `air`. I don't know what to make of this.
+```{r examine_cols_w_nas2}
+check_ECM1Lx <- function(data) {
+  data %>%
+    filter(is.na(ECM1Lx)) %>%
+    pull(ECMp) %>%
+    table() %>%
+    sort(decreasing = TRUE)
+}
+all_data2 %>%
+  mutate(map(data, check_ECM1Lx)) %>%
+  pull()
+```
+
+When `Ligand1Lx` is missing a value, `Ligand` is `FGF2|3`. I don't know what to make of this.
+```{r examine_cols_w_nas3}
+check_Ligand1Lx <- function(data) {
+  data %>%
+    filter(is.na(Ligand1Lx)) %>%
+    pull(Ligand) %>%
+    table() %>%
+    sort(decreasing = TRUE)
+}
+all_data2 %>%
+  mutate(map(data, check_Ligand1Lx)) %>%
+  pull()
+```
+
+There are no spots at which the cell count is zero.
+```{r check_cell_counts}
+summarize(all_data, num_zeros = sum(Spot_PA_SpotCellCount == 0))
+```
+
+For each plate, make a heatmap showing the cell count for each spot and a histogram of the cell counts. In several plates, there are many white rectangles. Based on the histograms, those appear to be due to many very low counts.
+```{r make_heatmaps_and_histograms, cache=TRUE}
+make_heatmap <- function(StainingSet, plate, tbl) {
+  tbl %>%
+    ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
+    facet_wrap(vars(Well), nrow = 2, labeller = label_both) +
+    geom_tile() +
+    labs(
+      x = "Column Index", y = "Row Index", fill = "Cell Count",
+      title = str_c(StainingSet, plate, sep = ", ")
+    ) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+make_histogram <- function(StainingSet, plate, tbl) {
+  tbl %>%
+    ggplot(aes(Spot_PA_SpotCellCount)) +
+    facet_wrap(vars(Well), nrow = 2, labeller = label_both) +
+    geom_histogram(binwidth = 1) +
+    labs(
+      x = "Cell Count", y = "Number of Spots",
+      title = str_c(StainingSet, plate, sep = ", ")
+    ) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+all_data %>%
+  select(
+    StainingSet, plate, Well, ArrayColumn, ArrayRow, Spot_PA_SpotCellCount
+  ) %>%
+  nest(tbl = !c(StainingSet, plate)) %>%
+  mutate(
+    heatmap = pmap(list(StainingSet, plate, tbl), make_heatmap),
+    histogram = pmap(list(StainingSet, plate, tbl), make_histogram),
+    plot = map2(heatmap, histogram, ~ arrangeGrob(.x, .y))
+  ) %>%
+  with(walk(plot, grid.arrange))
+```
+
+## Delete/update chunks below
+
+```{r eval=FALSE}
+data %>%
+  distinct(plate, Well, Ligand) %>%
+  arrange(Well, Ligand)
+
+data %>%
+  filter(StainingSet == unique(StainingSet)[1]) %>%
+  distinct(Well, Ligand) %>%
+  arrange(Well, Ligand)
+
+LI8X00510_Level2 %>%
+  select(Well, contains("ligand")) %>%
+  distinct()
+
+data %>%
+  select(StainingSet, plate, Well, contains("ligand")) %>%
+  distinct() %>%
+  arrange(StainingSet, plate, Well) %>%
+  nest(tbl = !c(StainingSet, plate)) %>%
+  group_by(StainingSet) %>%
+  summarize(num_tbls = n_distinct(tbl))
+
+# Same ligand positionings for each StainingSet
+data %>%
+  select(StainingSet, plate, Well, contains("ligand")) %>%
+  distinct() %>%
+  arrange(StainingSet, plate, Well) %>%
+  nest(tbl = !c(StainingSet, plate)) %>%
+  group_by(StainingSet) %>%
+  summarize(tbls = list(tbl)) %>%
+  pull(tbls) %>%
+  n_distinct()
 ```
 
 There are no missing values in `ArrayRow` or `ArrayColumn`.
-```{r nas_in_array_row_col}
-map_dfr(
-  tbls,
-  . %>% summarize(across(c(ArrayRow, ArrayColumn), ~ sum(is.na(.x))))
-) %>%
-  unique()
-```
-
-There is one row for each well-row-column triple.
-```{r well_row_col_triples}
-map_lgl(
-  tbls,
-  ~ all(count(.x, WellIndex, ArrayRow, ArrayColumn)$n == 1)
-) %>%
+```{r nas_in_array_row_col, eval=FALSE}
+data %>%
+  select(ArrayRow, ArrayColumn) %>%
+  vec_detect_complete() %>%
   all()
 ```
 
 `Spot` is related to `ArrayRow` and `ArrayColumn` in the expected way.
-```{r spot_arrayrow_arraycol}
+```{r spot_arrayrow_arraycol, eval=FALSE}
 map_lgl(
   tbls,
   ~ .x %>%
@@ -94,7 +272,7 @@ map_lgl(
 ```
 
 The filenames and barcodes are essentially the same.
-```{r barcodes}
+```{r barcodes, eval=FALSE}
 imap_lgl(
   tbls,
   ~ identical(unique(.x$Barcode), str_remove(.y, "_Level2$"))
@@ -103,7 +281,7 @@ imap_lgl(
 ```
 
 The ECM2 columns are the same across all wells.
-```{r ECM2}
+```{r ECM2, eval=FALSE}
 map(
   tbls,
   ~ unique(select(.x, contains("ECM2")))
@@ -111,36 +289,30 @@ map(
   unique()
 ```
 
-The Drug1 columns are the same across all wells.
-```{r Drug1}
-map(
-  tbls,
-  ~ unique(select(.x, starts_with("Drug1")))
-) %>%
-  unique()
-```
-
-There seems to be just one column with stain information.
-```{r stain_cols}
-map(
-  tbls,
-  ~ names(select(.x, contains("stain")))
-) %>%
-  unique()
-```
-
 As expected, each plate has one stain.
-```{r num_staining_sets_per_plate}
+```{r num_staining_sets_per_plate, eval=FALSE}
 map(tbls, ~ n_distinct(.x$StainingSet)) %>% unique()
 ```
 
 There are eight plates for each stain.
-```{r num_plates_per_staining_set}
+```{r num_plates_per_staining_set, eval=FALSE}
 map_chr(tbls, ~ .x$StainingSet[1]) %>% table()
 ```
 
+Plates with the same staining set have the same variables.
+```{r var_name_sets, eval=FALSE}
+tbls %>%
+  map_dfr(
+    function(tbl) {
+      tibble(StainingSet = tbl$StainingSet[1], var_names = list(names(tbl)))
+    }
+  ) %>%
+  group_by(StainingSet) %>%
+  summarize(num_var_name_sets = n_distinct(var_names))
+```
+
 There are three count columns in each file.
-```{r count_cols}
+```{r count_cols, eval=FALSE}
 map(
   tbls,
   ~ names(select(.x, contains("count")))
@@ -149,7 +321,7 @@ map(
 ```
 
 `Spot_PA_SpotCellCount_SE` always equals zero.
-```{r Spot_PA_SpotCellCount_SE}
+```{r Spot_PA_SpotCellCount_SE, eval=FALSE}
 map_lgl(
   tbls,
   . %>% pull(Spot_PA_SpotCellCount_SE) %>% near(0) %>% all()
@@ -158,7 +330,7 @@ map_lgl(
 ```
 
 `Spot_PA_ReplicateCount` seems to have something to do with the reuse of ECMPs within wells since its maximum value is 15. How should this column be interpreted?
-```{r Spot_PA_ReplicateCount}
+```{r Spot_PA_ReplicateCount, eval=FALSE}
 map(
   tbls,
   . %>%
@@ -171,7 +343,7 @@ map(
 )
 ```
 
-```{r}
+```{r, eval=FALSE}
 map_dfr(
   tbls,
   ~ summarize(
@@ -186,7 +358,7 @@ map_dfr(
 ```
 
 The cell count distributions for the different staining sets are quite different.
-```{r cell_count_dists}
+```{r cell_count_dists, eval=FALSE}
 tbls %>%
   map_dfr(~ select(.x, StainingSet, Spot_PA_SpotCellCount), .id = "tbl") %>%
   ggplot(aes(Spot_PA_SpotCellCount, color = StainingSet)) +
@@ -195,51 +367,190 @@ tbls %>%
   theme_bw()
 ```
 
-```{r}
-LI8X00510_Level2 %>%
-  filter(WellIndex == 1) %>%
-  select(ArrayRow, ArrayColumn, Spot_PA_SpotCellCount) %>%
-  ggplot(aes(ArrayRow, ArrayColumn, fill = Spot_PA_SpotCellCount)) +
-  geom_tile() +
-  theme_bw()
-```
-
-The counts for well 3 are lower than for the other wells. There are also fewer spots for that well than for the other wells.
-```{r}
+For this one plate, the counts for well 3 are lower than for the other wells. There are also fewer spots for that well than for the other wells.
+```{r one_plate_heatmap, eval=FALSE}
 LI8X00510_Level2 %>%
   ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
-  facet_wrap(vars(WellIndex)) +
+  facet_wrap(vars(Well), nrow = 2, labeller = label_both) +
   geom_tile() +
-  labs(fill = "Cell Count") +
+  labs(x = "Column Index", y = "Row Index", fill = "Cell Count") +
   theme_bw()
 ```
 
-```{r}
-LI8X00510_Level2 %>%
-  group_by(WellIndex) %>%
-  summarize(num_spots = n())
+```{r dists_by_ligand, eval=FALSE}
+data %>%
+  ggplot(aes(Ligand, Spot_PA_SpotCellCount)) +
+  geom_boxplot() +
+  theme_bw()
+data %>%
+  ggplot(aes(Ligand, Cells_CP_AreaShape_Area)) +
+  geom_boxplot() +
+  theme_bw()
+data %>%
+  ggplot(aes(Ligand, Cells_CP_AreaShape_Perimeter)) +
+  geom_boxplot() +
+  theme_bw()
+```
+
+```{r, echo=FALSE, eval=FALSE}
+data %>%
+  filter(Ligand == "FBS") %>%
+  select(StainingSet, ECMp, plate, Spot_PA_SpotCellCount) %>%
+  arrange(StainingSet, ECMp, plate) %>%
+  filter(ECMp == "air") %>%
+  arrange(plate)
 ```
 
 
-```{r}
-LI8X00510_Level2 %>%
-  select(WellIndex, ArrayRow, ArrayColumn, Spot_PA_SpotCellCount) %>%
-  nest(count_tbl = !WellIndex) %>%
-  mutate(
-    heatmap = map2(
-      WellIndex,
-      count_tbl,
-      ~ .y %>%
-        ggplot(aes(ArrayRow, ArrayColumn, fill = Spot_PA_SpotCellCount)) +
-        geom_tile() +
-        labs(fill = "Cell Count", title = .x) +
-        theme_bw()
-    )
+```{r, echo=FALSE, eval=FALSE}
+data %>%
+  select(StainingSet, plate, Ligand, Spot_PA_SpotCellCount) %>%
+  count(StainingSet, plate, Ligand) %>%
+  pivot_wider(id_cols = Ligand, names_from = StainingSet, values_from = n)
+
+data %>%
+  select(StainingSet, plate, Ligand, Spot_PA_SpotCellCount) %>%
+  filter(
+    StainingSet == "SS1Layout1Set1",
+    plate == "LI8X00519_Level2",
+    Ligand == "ANGPT1|1"
   )
+
+data %>%
+  distinct(StainingSet, Ligand, Spot_PA_SpotCellCount) %>%
+  filter(Ligand == "ANGPT1|1", StainingSet == "SS2noH3Layout1Set1")
+
+data %>%
+  distinct(StainingSet, Ligand, Spot_PA_SpotCellCount) %>%
+  filter(Ligand == "ANGPT1|1", StainingSet == "SS3Layout1Set3")
+
+data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  
 ```
 
-```{r}
-tbl %>%
-  select(where(~ n_distinct(.x) == 1)) %>%
-  slice(1)
+```{r, eval=FALSE}
+# Too many variables
+data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  select(starts_with("Cells_CP_AreaShape_")) %>%
+  select(
+    -c(Cells_CP_AreaShape_Extent, Cells_CP_AreaShape_FormFactor,
+       Cells_CP_AreaShape_Orientation, Cells_CP_AreaShape_Solidity)
+  ) %>%
+  pairs()
+
+data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  select(starts_with("Cells_CP_AreaShape_")) %>%
+  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
+  select(Area, Compactness, Eccentricity) %>%
+  ggpairs(aes(alpha = 0.1)) +
+  theme_bw()
+
+data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  select(starts_with("Cells_CP_AreaShape_")) %>%
+  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
+  select(Area, Compactness, Eccentricity) %>%
+  mutate(across(.fns = ~ qnorm(rank(.x) / (n() + 1)))) %>%
+  ggpairs() +
+  theme_bw()
+
+data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  select(starts_with("Cells_CP_AreaShape_")) %>%
+  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
+  select(Compactness, Eccentricity) %>%
+  ggplot(aes(Compactness, Eccentricity)) +
+  geom_point(alpha = 0.1) +
+  coord_cartesian(xlim = c(1, 2)) +
+  theme_bw()
+
+data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  select(starts_with("Cells_CP_AreaShape_")) %>%
+  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
+  select(Compactness, Eccentricity) %>%
+  mutate(across(.fns = ~ qnorm(rank(.x) / (n() + 1)))) %>%
+  ggplot(aes(Compactness, Eccentricity)) +
+  geom_point(alpha = 0.1) +
+  theme_bw()
+```
+
+```{r, eval=FALSE}
+calc_cor <- function(ligand, ecmp, var1, var2) {
+  
+}
+```
+
+
+```{r, eval=FALSE}
+data1 <- data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  select(where(~ any(!is.na(.x)))) %>%
+  select(plate, Ligand, ECMp, where(is.numeric))
+data1 %>%
+  select(where(is.numeric)) %>%
+  names() %>%
+  expand_grid(var1 = ., var2 = .) %>%
+  filter(var1 != var2) %>%
+  mutate(
+    var1_vals = map(var1, ~ data1[[.x]]), var2_vals = map(var2, ~ data1[[.x]])
+  )
+data1 %>%
+  select()
+```
+
+
+```{r, eval=FALSE}
+data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  select(plate, Ligand, ECMp, Spot_PA_SpotCellCount, contains("AreaShape"))
+```
+
+```{r, eval=FALSE}
+data %>%
+  select(StainingSet, contains("neighbor")) %>%
+  ggplot(aes(Nuclei_PA_AreaShape_Neighbors, color = StainingSet)) +
+  geom_freqpoly() +
+  theme_bw()
+
+data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  ggplot(aes(Nuclei_PA_AreaShape_Neighbors)) +
+  geom_histogram() +
+  theme_bw()
+
+data %>%
+  select(StainingSet, contains("neighbor")) %>%
+  group_by(StainingSet) %>%
+  summarize(
+    neighbors_dist = list(
+      sort(table(Nuclei_PA_AreaShape_Neighbors), decreasing = TRUE)
+    )
+  ) %>%
+  deframe()
+```
+
+```{r, eval=FALSE}
+data %>%
+  filter(StainingSet == "SS1Layout1Set1") %>%
+  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
+  select(Ligand, ECMp, Area, Perimeter) %>%
+  arrange(Ligand, ECMp) %>%
+  group_by(Ligand, ECMp) %>%
+  mutate( # How should ties be broken when ranking?
+    cor = cor(Area, Perimeter),
+    Area2 = qnorm(rank(Area) / (n() + 1)),
+    Perimeter2 = qnorm(rank(Perimeter) / (n() + 1)),
+    cor2 = cor(Area2, Perimeter2),
+    num_replicates = n()
+  ) %>%
+  ungroup() %>%
+  filter(num_replicates >= 10) %>%
+  distinct(Ligand, ECMp, cor2) %>%
+  ggplot(aes(cor2)) +
+  geom_histogram() +
+  theme_bw()
 ```
