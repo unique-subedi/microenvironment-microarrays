@@ -158,7 +158,8 @@ for(i in seq_along(cor_tbl_list)){
         mutate(treatment = names(cor_list)[[j]], table_num = i) %>%
         select(table_num, treatment, everything()) %>%
         separate(treatment, into = c("ECM1", "Ligand1"), sep = ":", 
-                 remove = FALSE)
+                 remove = FALSE) %>%
+        mutate(n = cor_test_out[["n"]])
     }
   }
   cor_tbl_list[[i]] = bind_rows(cor_list)
@@ -167,11 +168,14 @@ big_cor_tbl = bind_rows(cor_tbl_list) %>%
   arrange(p_val)
 
 small_big_cor_tbl = big_cor_tbl %>%
-  mutate(row_num = 1:nrow(big_cor_tbl)) %>%
+  filter(n >= 10) %>%
+  mutate(row_num = 1:nrow(.)) %>%
   mutate(pass_holm = p_val <= 0.01/(nrow(big_cor_tbl) - row_num + 1)) %>%
   filter(pass_holm == TRUE) %>%
   select(!row_num & !pass_holm)
-
+# I don't think the p-values equalling 0 are correct but this shouldn't matter
+# p-value obtained from t-test
+# Could get btter p-values using better test but could take a long time
 # write_tsv(small_big_cor_tbl, "small_big_cor_tbl.tsv")  
 ```
 
