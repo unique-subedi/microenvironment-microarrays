@@ -114,8 +114,9 @@ lapply(seq_along(tbls), function(x)
 ct_sl_summary_df
 ```
 
-```{r First stain set}
-for(i in 10){
+```{r Big Spearman correlation tibble}
+cor_tbl_list = vector(mode = "list", length = length(tbls))
+for(i in seq_along(cor_tbl_list)){
   tbls2 = tbls[[i]] %>%
   unite(ECM1, Ligand1, col = "treatment", sep = ":")
   treatments = tbls2[["treatment"]]
@@ -126,20 +127,22 @@ for(i in 10){
     select(where(function(x) length(unique(x)) > 8)) %>%
     mutate(treatment = treatments) %>%
     select(treatment, everything()) %>%
-    select(!PrintSpot & !ImageID & !ClarionID)
+    select(!PrintSpot & !ImageID & !ClarionID) %>%
+    select(Nuclei_CP_AreaShape_Area | !contains("_AreaShape_")) %>%
+    select(!contains("_90_") | !ends_with("_90")) %>%
+    select(!contains("_IntegratedIntensity"))
     
   cor_list = vector(mode = "list", length = length(unique(treatments)))
-  for(j in 2){
+  names(cor_list) = unique(treatments)
+  for(j in seq_along(cor_list)){
     treat_tbl = tbls_reduced %>% 
       filter(treatment == unique(treatments)[[j]]) %>%
       select(!treatment) %>%
       select(where(function(x) length(unique(x)) > 1))
-    if(length(treat_tbl) == 0){
-      cor_list = NULL
-    } else {
+    if(length(treat_tbl) != 0){
       cor_test_out = corr.test(treat_tbl, method = "spearman", ci = FALSE)
       p_mat_simple = cor_test_out[["p"]]
-      p_mat_simple[lower.tri(p_mat_simple)] = 2 # Filters out repeats later
+      p_mat_simple[upper.tri(p_mat_simple)] = 2 # Filters out repeats later
       p_tbl = p_mat_simple %>%
         as.data.frame() %>%
         rownames_to_column(var = "row_var") %>%
@@ -151,12 +154,19 @@ for(i in 10){
         pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
         rename(spear_cor = value) %>%
         left_join(p_tbl, by = c("row_var", "col_var")) %>%
-        filter(p_val <= 0.01, row_var != col_var)
+        filter(p_val <= 1, row_var != col_var) %>%
+        mutate(treatment = names(cor_list)[[j]], table_num = i) %>%
+        select(table_num, treatment, everything()) %>%
+        separate(treatment, into = c("ECM1", "Ligand1"), sep = ":", 
+                 remove = FALSE)
     }
   }
+  cor_tbl_list[[i]] = bind_rows(cor_list)
 }
+big_cor_tbl = bind_rows(cor_tbl_list) %>%
+  arrange(p_val)
 
-  
+# write_tsv(big_cor_tbl, "big_cor_tbl.tsv")  
 ```
 
 
