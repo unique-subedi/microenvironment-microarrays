@@ -166,7 +166,13 @@ for(i in seq_along(cor_tbl_list)){
 big_cor_tbl = bind_rows(cor_tbl_list) %>%
   arrange(p_val)
 
-# write_tsv(big_cor_tbl, "big_cor_tbl.tsv")  
+small_big_cor_tbl = big_cor_tbl %>%
+  mutate(row_num = 1:nrow(big_cor_tbl)) %>%
+  mutate(pass_holm = p_val <= 0.01/(nrow(big_cor_tbl) - row_num + 1)) %>%
+  filter(pass_holm == TRUE) %>%
+  select(!row_num & !pass_holm)
+
+# write_tsv(small_big_cor_tbl, "small_big_cor_tbl.tsv")  
 ```
 
 
