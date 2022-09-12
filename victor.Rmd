@@ -1,11 +1,11 @@
 ---
-title: "Project 1"
+title: "STATS 604 Project 1"
 output: html_document
-date: "2022-09-01"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(cowplot)
 library(GGally)
 library(gridExtra)
 library(tidyverse)
@@ -13,7 +13,7 @@ library(tools)
 library(vctrs)
 ```
 
-## Read the data
+# Data Loading
 
 Make one tibble with all of the data.
 ```{r make_all_data, cache=TRUE, message=FALSE}
@@ -23,39 +23,127 @@ all_data <- map_dfr(files, read_tsv, .id = "plate")
 ```
 
 There seems to be just one column with staining set information.
-```{r find_stain_cols}
+```{r find_ss_cols}
 select(all_data, contains("stain"))
 ```
 
-Discard columns that only have missing values.
-```{r drop_na_only_cols}
-drop_na_only_cols <- function(tbl) select(tbl, !where(~ all(is.na(.x))))
-all_data <- drop_na_only_cols(all_data)
+These are the names of the staining sets.
+```{r ss_nms}
+unique(all_data$StainingSet)
+```
+
+Number the staining sets and the plates.
+```{r number_sss_and_plates}
+all_data <- all_data %>%
+  relocate(StainingSet, .before = 1) %>%
+  mutate(
+    ss_num = case_when(
+      StainingSet == "SS1Layout1Set1" ~ 1L,
+      StainingSet == "SS2noH3Layout1Set1" ~ 2L,
+      StainingSet == "SS3Layout1Set3" ~ 3L
+    )
+  ) %>%
+  relocate(ss_num, .after = StainingSet) %>%
+  group_by(ss_num) %>%
+  mutate(plate_num = dense_rank(plate)) %>%
+  ungroup() %>%
+  relocate(plate_num, .after = plate) %>%
+  arrange(ss_num, plate_num)
 ```
 
 Create one tibble for each staining set.
-```{r make_all_data2, cache=TRUE}
-all_data2 <- all_data %>%
-  nest(data = !StainingSet) %>%
-  mutate(data = map(data, drop_na_only_cols))
+```{r make_ss_tbls, cache=TRUE}
+all_data2 <- nest(all_data, data = !c(StainingSet, ss_num))
+with(
+  all_data2,
+  walk2(
+    ss_num, data,
+    function(ss_num, data) {
+      assign(str_interp("ss${ss_num}_data"), data, .GlobalEnv)
+    }
+  )
+)
 ```
 
-```{r view, eval=FALSE}
-LI8X00510_Level2 %>%
-  select(
-    -c(Barcode, Well, Spot, contains("ECM2"), starts_with("Drug1"),
-       Spot_PA_SpotCellCount_SE)
-  ) %>%
-  View()
+# Missingness Analysis
+
+For each staining set, there are many columns that only have NAs, seemingly because different variables were measured for different staining sets.
+```{r find_na_only_cols}
+find_na_only_cols <- function(data) {
+  data %>% select(where(~ all(is.na(.x)))) %>% names()
+}
+all_data2 %>%
+  mutate(na_only_cols = map(data, find_na_only_cols)) %>%
+  pull()
 ```
 
-## Do EDA
+Drop columns that only have missing values.
+```{r drop_na_only_cols}
+drop_na_only_cols <- function(data) select(data, !where(~ all(is.na(.x))))
+
+all_data <- drop_na_only_cols(all_data)
+all_data2 <- mutate(all_data2, data = map(data, drop_na_only_cols))
+ss1_data <- drop_na_only_cols(ss1_data)
+ss2_data <- drop_na_only_cols(ss2_data)
+ss3_data <- drop_na_only_cols(ss3_data)
+```
+
+For each staining set, only a few columns have missing values; these columns are the same across staining sets. They are only missing a small proportion of their
+values.
+```{r find_cols_w_nas}
+find_cols_w_nas <- function(data) {
+  data %>%
+    summarize(across(.fns = ~ mean(is.na(.x)))) %>%
+    select(where(~ .x > 0))
+}
+all_data2 %>% mutate(map(data, find_cols_w_nas)) %>% pull()
+```
+
+When an `ECM2` column is missing a value, `ECMp` is collagen, which makes sense.
+```{r examine_cols_w_nas}
+check_ECM2_cols_w_nas <- function(data) {
+  data %>%
+    select(ECMp, contains("ECM2")) %>%
+    filter(!vec_detect_complete(.)) %>%
+    pull(ECMp) %>%
+    table() %>%
+    proportions() %>%
+    sort(decreasing = TRUE) 
+}
+all_data2 %>% mutate(map(data, check_ECM2_cols_w_nas)) %>% pull()
+```
+
+When `ECM1Lx` is missing a value, `ECMp` is either `ELN|3` or `air`. I don't know what to make of this.
+```{r examine_cols_w_nas2}
+check_ECM1Lx <- function(data) {
+  data %>%
+    filter(is.na(ECM1Lx)) %>%
+    pull(ECMp) %>%
+    table() %>%
+    proportions() %>%
+    sort(decreasing = TRUE)
+}
+all_data2 %>% mutate(map(data, check_ECM1Lx)) %>% pull()
+```
+
+When `Ligand1Lx` is missing a value, `Ligand` is `FGF2|3`. I don't know what to make of this.
+```{r examine_cols_w_nas3}
+check_Ligand1Lx <- function(data) {
+  data %>%
+    filter(is.na(Ligand1Lx)) %>%
+    pull(Ligand) %>%
+    table() %>%
+    proportions() %>%
+    sort(decreasing = TRUE)
+}
+all_data2 %>% mutate(map(data, check_Ligand1Lx)) %>% pull()
+```
+
+# Structure Checks
 
 There are as many plates as expected.
 ```{r check_num_plates}
-all_data %>%
-  group_by(StainingSet) %>%
-  summarize(num_plates = n_distinct(plate))
+all_data %>% group_by(StainingSet) %>% summarize(num_plates = n_distinct(plate))
 ```
 
 The name of each plate matches the pattern below.
@@ -115,61 +203,7 @@ all_data %>%
   reduce(intersect)
 ```
 
-For each staining set, only a few columns have missing values; these columns are the same across staining sets. They are only missing a small proportion of their
-values.
-```{r find_cols_w_nas}
-find_cols_w_nas <- function(data) {
-  data %>%
-    summarize(across(.fns = ~ mean(is.na(.x)))) %>%
-    select(where(~ .x > 0))
-}
-all_data2 %>%
-  mutate(map(data, find_cols_w_nas)) %>%
-  pull()
-```
-
-When an `ECM2` column is missing a value, `ECMp` is collagen, which makes sense.
-```{r examine_cols_w_nas1}
-check_ECM2_cols_w_nas <- function(data) {
-  data %>%
-    select(ECMp, contains("ECM2")) %>%
-    filter(!vec_detect_complete(.)) %>%
-    pull(ECMp) %>%
-    table() %>%
-    sort(decreasing = TRUE) 
-}
-all_data2 %>%
-  mutate(map(data, check_ECM2_cols_w_nas)) %>%
-  pull()
-```
-
-When `ECM1Lx` is missing a value, `ECMp` is either `ELN|3` or `air`. I don't know what to make of this.
-```{r examine_cols_w_nas2}
-check_ECM1Lx <- function(data) {
-  data %>%
-    filter(is.na(ECM1Lx)) %>%
-    pull(ECMp) %>%
-    table() %>%
-    sort(decreasing = TRUE)
-}
-all_data2 %>%
-  mutate(map(data, check_ECM1Lx)) %>%
-  pull()
-```
-
-When `Ligand1Lx` is missing a value, `Ligand` is `FGF2|3`. I don't know what to make of this.
-```{r examine_cols_w_nas3}
-check_Ligand1Lx <- function(data) {
-  data %>%
-    filter(is.na(Ligand1Lx)) %>%
-    pull(Ligand) %>%
-    table() %>%
-    sort(decreasing = TRUE)
-}
-all_data2 %>%
-  mutate(map(data, check_Ligand1Lx)) %>%
-  pull()
-```
+# Cell Count Analysis
 
 There are no spots at which the cell count is zero.
 ```{r check_cell_counts}
@@ -215,9 +249,364 @@ all_data %>%
   with(walk(plot, grid.arrange))
 ```
 
-## Delete/update chunks below
+# Dimensionality Reduction
 
-```{r eval=FALSE}
+## Variable Scales
+
+These seem to be the numeric ID columns; these should be excluded when doing PCA.
+```{r find_numeric_id_cols}
+numeric_id_cols <- all_data %>%
+  select(
+    where(is.numeric) &
+      !matches("^(Cells|Cytoplasm|Nuclei)_(CP|PA)_") &
+      !matches("(Diameter|Conc|TimeReact)$") &
+      !matches("^Spot_PA_") &
+      !QAScore
+  ) %>%
+  names()
+numeric_id_cols
+```
+
+No variable name contains "|".
+```{r find_cols_w_pipe}
+select(all_data, contains("|"))
+```
+
+Define a function for calculating the medians and IQRs of all non-trivial numeric variables in a dataset whose names match a pattern. The output has one row for each variable and columns with the summary statistics. For each staining set, the five variables with the largest medians are also shown.
+```{r summary_stats_funcs}
+calc_summary_stats <- function(data, pattern = ".*") {
+  data %>%
+    select(
+      where(is.numeric) &
+        where(~ !any(is.na(.x))) &
+        where(~ n_distinct(.x) > 1) &
+        !any_of(numeric_id_cols) &
+        matches(pattern)
+    ) %>%
+    summarize(
+      across(.fns = list(median = median, iqr = IQR), .names = "{.col}|{.fn}")
+    ) %>%
+    pivot_longer(
+      cols = everything(), names_to = c("col", ".value"), names_sep = "\\|"
+    )  
+}
+
+make_summary_stats_plot <- function(summary_stats, title) {
+  median_panel <- summary_stats %>%
+    mutate(log_median = log10(median - min(median) + 1)) %>%
+    ggplot(aes(log_median)) +
+    geom_histogram(color = "black", fill = "lightgray", bins = 10) +
+    labs(x = "Log Median", y = "Number of Variables") +
+    theme_bw()
+  iqr_panel <- summary_stats %>%
+    mutate(log_iqr = log10(iqr - min(iqr) + 1)) %>%
+    ggplot(aes(log_iqr)) +
+    geom_histogram(color = "black", fill = "lightgray", bins = 10) +
+    labs(x = "Log IQR", y = "Number of Variables") +
+    theme_bw()
+  arrangeGrob(median_panel, iqr_panel, nrow = 1, top = title)
+}
+```
+
+The histograms below show the log-transformed medians and IQRs of all of the variables. For each staining set, there is a fair amount of variation in scale across variables - some variables are on a much larger scale than others. This means that rescaling before performing PCA is absolutely necessary. Otherwise, the top PCs will largely reflect the variables with the largest scales. For each staining set, the five variables with the largest medians are also shown.
+```{r summary_stats, message=FALSE}
+all_summary_stats <- all_data2 %>%
+  mutate(
+    summary_stats = map(data, calc_summary_stats),
+    title = map_chr(
+      ss_num, ~ str_interp("Staining Set ${.x} Summary Statistics")
+    ),
+    summary_stats_plot = map2(summary_stats, title, make_summary_stats_plot)
+  )
+
+with(all_summary_stats, walk(summary_stats_plot, grid.arrange))
+
+all_summary_stats %>%
+  mutate(
+    summary_stats = map(
+      summary_stats, ~ slice(arrange(.x, desc(median)), n = 1:5)
+    )
+  ) %>%
+  select(ss_num, summary_stats) %>%
+  unnest(summary_stats) %>%
+  print(n = 15)
+
+rm(all_summary_stats)
+```
+
+The histograms below show the log-transformed medians and IQRs of the AreaShape variables. We again see that the variables differ in scale substantially. 
+```{r areashape_summary_stats, message=FALSE}
+all_summary_stats <- all_data2 %>%
+  mutate(
+    summary_stats = map(data, calc_summary_stats, pattern = "AreaShape"),
+    title = map_chr(
+      ss_num, ~ str_interp("Staining Set ${.x} AreaShape Summary Statistics")
+    ),
+    summary_stats_plot = map2(summary_stats, title, make_summary_stats_plot)
+  )
+
+with(all_summary_stats, walk(summary_stats_plot, grid.arrange))
+
+all_summary_stats %>%
+  mutate(
+    summary_stats = map(
+      summary_stats, ~ slice(arrange(.x, desc(median)), n = 1:5)
+    )
+  ) %>%
+  select(ss_num, summary_stats) %>%
+  unnest(summary_stats) %>%
+  print(n = 15)
+
+rm(all_summary_stats)
+```
+
+## PCA
+
+Define functions for running PCA and plotting the results of PCA.
+```{r pca_funcs}
+run_pca <- function(data, pattern = ".*") {
+  data %>%
+    select(
+      where(is.numeric) &
+        where(~ !any(is.na(.x))) &
+        where(~ n_distinct(.x) > 1) &
+        !any_of(numeric_id_cols) &
+        matches(pattern)
+    ) %>%
+    prcomp(scale. = TRUE)
+}
+
+make_prop_var_explained_plot <- function(pca_results, title) {
+  plot <- pca_results %>%
+    `$`("sdev") %>%
+    `^`(2) %>%
+    {cumsum(.) / sum(.)} %>%
+    enframe(name = "num_pcs", value = "prop_var_explained") %>%
+    ggplot(aes(num_pcs, prop_var_explained)) +
+    geom_point() +
+    geom_line() +
+    geom_hline(linetype = "dashed", yintercept = 0.95) +
+    labs(
+      x = "Number of PCs", y = "Proportion of Variation Explained",
+      title = title
+    ) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5))
+  brks <- layer_scales(plot)$y$get_breaks()
+  plot + scale_y_continuous(breaks = c(brks, 0.95))
+}
+```
+
+The plots below show that the first 20-30 PCs capture around 95\% of the variation for each staining set.
+```{r pca}
+all_data2 %>%
+  mutate(
+    pca_results = map(data, run_pca),
+    title = map_chr(
+      ss_num, ~ str_interp("PCA for Staining Set ${.x}")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+```{r pca_by_plate, eval=FALSE, include=FALSE}
+all_data %>%
+  nest(data = !c(ss_num, plate_num)) %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = "AreaShape"),
+    title = map2_chr(
+      ss_num, plate_num,
+      ~ str_interp("AreaShape PCA for Plate ${.y} of Staining Set ${.x}")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+Define a function that counts non-trivial numeric columns whose names match a pattern.
+```{r count_cols}
+count_cols <- function(data, pattern) {
+  data %>%
+    select(
+      where(is.numeric) &
+        where(~ !any(is.na(.x))) &
+        where(~ n_distinct(.x) > 1) &
+        !any_of(numeric_id_cols) &
+        matches(pattern)
+    ) %>%
+    ncol()
+}
+```
+
+### PCA by Variable Class
+
+For each class of columns, count columns by staining set. Some classes don't appear in all staining sets. For others, the counts differ substantially across staining sets.
+```{r col_counts_by_class}
+all_data2 %>%
+  mutate(
+    num_areashape_cols = map_int(data, count_cols, pattern = "AreaShape"),
+    num_intensity_cols = map_int(data, count_cols, pattern = "Intensity"),
+    num_cycle_cols = map_int(data, count_cols, pattern = "Cycle"),
+    num_gated_cols = map_int(data, count_cols, pattern = "Gated"),
+    num_texture_cols = map_int(data, count_cols, pattern = "Texture")
+  ) %>%
+  select(!c(StainingSet, ss_num, data)) %>%
+  print(width = 100)
+```
+
+Looking only at the AreaShape variables, fewer than ten PCs account for over 95\% of the variation. In particular, for staining set 2, just four PCs account for that percentage of the variation.
+```{r areashape_pca}
+all_data2 %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = "AreaShape"),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, AreaShape Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+We next consider the Intensity variables. For staining sets 1 and 2, around five PCs capture 95\% of the variation. However, for staining set 3, 12-13 PCs are needed.
+```{r intensity_pca}
+all_data2 %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = "Intensity"),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, Intensity Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+For each staining set, the top two PCs account for all of the variation.
+```{r cycle_pca}
+all_data2 %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = "Cycle"),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, Cycle Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed.
+```{r gated_pca}
+all_data2 %>%
+  filter(ss_num != 1) %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = "Gated"),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, Gated Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+The Texture variables were only measured for staining set 2. Six PCs account for 95\% of the variation.
+```{r texture_pca}
+all_data2 %>%
+  filter(ss_num == 2) %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = "Texture"),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, Texture Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+### PCA by Cell Part
+
+For each cell part, count columns by staining set. As before, some classes don't appear in all staining sets. For others, the counts differ substantially across staining sets.
+```{r col_counts_by_cell_part}
+all_data2 %>%
+  mutate(
+    num_cells_cols = map_int(data, count_cols, pattern = "Cells"),
+    num_cytoplasm_cols = map_int(data, count_cols, pattern = "Cytoplasm"),
+    num_nuclei_cols = map_int(data, count_cols, pattern = "Nuclei")
+  ) %>%
+  select(!c(StainingSet, ss_num, data))
+```
+
+Looking at the Cells variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 3, the number is nine.
+```{r cells_pca}
+all_data2 %>%
+  filter(ss_num != 2) %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = "Cells"),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, Cells Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+Looking at the Cytoplasm variables, for staining set 1, the first eight PCs account for 95\% of the variation. For staining set 3, the number is 15.
+```{r cytoplasm_pca}
+all_data2 %>%
+  filter(ss_num != 2) %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = "Cytoplasm"),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, Cytoplasm Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+Looking at the Nuclei variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 2, the number is around 17. For staining set 3, the number is 11.
+```{r nuclei_pca}
+all_data2 %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = "Nuclei"),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, Nuclei Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    )
+  ) %>%
+  with(walk(prop_var_explained_plot, print))
+```
+
+# Delete/update chunks below
+
+```{r eval=FALSE, include=FALSE}
 data %>%
   distinct(plate, Well, Ligand) %>%
   arrange(Well, Ligand)
@@ -252,7 +641,7 @@ data %>%
 ```
 
 There are no missing values in `ArrayRow` or `ArrayColumn`.
-```{r nas_in_array_row_col, eval=FALSE}
+```{r nas_in_array_row_col, eval=FALSE, include=FALSE}
 data %>%
   select(ArrayRow, ArrayColumn) %>%
   vec_detect_complete() %>%
@@ -260,7 +649,7 @@ data %>%
 ```
 
 `Spot` is related to `ArrayRow` and `ArrayColumn` in the expected way.
-```{r spot_arrayrow_arraycol, eval=FALSE}
+```{r spot_arrayrow_arraycol, eval=FALSE, include=FALSE}
 map_lgl(
   tbls,
   ~ .x %>%
@@ -272,7 +661,7 @@ map_lgl(
 ```
 
 The filenames and barcodes are essentially the same.
-```{r barcodes, eval=FALSE}
+```{r barcodes, eval=FALSE, include=FALSE}
 imap_lgl(
   tbls,
   ~ identical(unique(.x$Barcode), str_remove(.y, "_Level2$"))
@@ -281,7 +670,7 @@ imap_lgl(
 ```
 
 The ECM2 columns are the same across all wells.
-```{r ECM2, eval=FALSE}
+```{r ECM2, eval=FALSE, include=FALSE}
 map(
   tbls,
   ~ unique(select(.x, contains("ECM2")))
@@ -290,17 +679,17 @@ map(
 ```
 
 As expected, each plate has one stain.
-```{r num_staining_sets_per_plate, eval=FALSE}
+```{r num_staining_sets_per_plate, eval=FALSE, include=FALSE}
 map(tbls, ~ n_distinct(.x$StainingSet)) %>% unique()
 ```
 
 There are eight plates for each stain.
-```{r num_plates_per_staining_set, eval=FALSE}
+```{r num_plates_per_staining_set, eval=FALSE, include=FALSE}
 map_chr(tbls, ~ .x$StainingSet[1]) %>% table()
 ```
 
 Plates with the same staining set have the same variables.
-```{r var_name_sets, eval=FALSE}
+```{r var_name_sets, eval=FALSE, include=FALSE}
 tbls %>%
   map_dfr(
     function(tbl) {
@@ -312,7 +701,7 @@ tbls %>%
 ```
 
 There are three count columns in each file.
-```{r count_cols, eval=FALSE}
+```{r count_count_cols, eval=FALSE, include=FALSE}
 map(
   tbls,
   ~ names(select(.x, contains("count")))
@@ -321,7 +710,7 @@ map(
 ```
 
 `Spot_PA_SpotCellCount_SE` always equals zero.
-```{r Spot_PA_SpotCellCount_SE, eval=FALSE}
+```{r Spot_PA_SpotCellCount_SE, eval=FALSE, include=FALSE}
 map_lgl(
   tbls,
   . %>% pull(Spot_PA_SpotCellCount_SE) %>% near(0) %>% all()
@@ -330,7 +719,7 @@ map_lgl(
 ```
 
 `Spot_PA_ReplicateCount` seems to have something to do with the reuse of ECMPs within wells since its maximum value is 15. How should this column be interpreted?
-```{r Spot_PA_ReplicateCount, eval=FALSE}
+```{r Spot_PA_ReplicateCount, eval=FALSE, include=FALSE}
 map(
   tbls,
   . %>%
@@ -343,7 +732,7 @@ map(
 )
 ```
 
-```{r, eval=FALSE}
+```{r, eval=FALSE, include=FALSE}
 map_dfr(
   tbls,
   ~ summarize(
@@ -358,7 +747,7 @@ map_dfr(
 ```
 
 The cell count distributions for the different staining sets are quite different.
-```{r cell_count_dists, eval=FALSE}
+```{r cell_count_dists, eval=FALSE, include=FALSE}
 tbls %>%
   map_dfr(~ select(.x, StainingSet, Spot_PA_SpotCellCount), .id = "tbl") %>%
   ggplot(aes(Spot_PA_SpotCellCount, color = StainingSet)) +
@@ -368,7 +757,7 @@ tbls %>%
 ```
 
 For this one plate, the counts for well 3 are lower than for the other wells. There are also fewer spots for that well than for the other wells.
-```{r one_plate_heatmap, eval=FALSE}
+```{r one_plate_heatmap, eval=FALSE, include=FALSE}
 LI8X00510_Level2 %>%
   ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
   facet_wrap(vars(Well), nrow = 2, labeller = label_both) +
@@ -377,7 +766,7 @@ LI8X00510_Level2 %>%
   theme_bw()
 ```
 
-```{r dists_by_ligand, eval=FALSE}
+```{r dists_by_ligand, eval=FALSE, include=FALSE}
 data %>%
   ggplot(aes(Ligand, Spot_PA_SpotCellCount)) +
   geom_boxplot() +
@@ -392,7 +781,7 @@ data %>%
   theme_bw()
 ```
 
-```{r, echo=FALSE, eval=FALSE}
+```{r, echo=FALSE, eval=FALSE, include=FALSE}
 data %>%
   filter(Ligand == "FBS") %>%
   select(StainingSet, ECMp, plate, Spot_PA_SpotCellCount) %>%
@@ -402,7 +791,7 @@ data %>%
 ```
 
 
-```{r, echo=FALSE, eval=FALSE}
+```{r, echo=FALSE, eval=FALSE, include=FALSE}
 data %>%
   select(StainingSet, plate, Ligand, Spot_PA_SpotCellCount) %>%
   count(StainingSet, plate, Ligand) %>%
@@ -429,7 +818,7 @@ data %>%
   
 ```
 
-```{r, eval=FALSE}
+```{r, eval=FALSE, include=FALSE}
 # Too many variables
 data %>%
   filter(StainingSet == "SS1Layout1Set1") %>%
@@ -478,14 +867,14 @@ data %>%
   theme_bw()
 ```
 
-```{r, eval=FALSE}
+```{r, eval=FALSE, include=FALSE}
 calc_cor <- function(ligand, ecmp, var1, var2) {
   
 }
 ```
 
 
-```{r, eval=FALSE}
+```{r, eval=FALSE, include=FALSE}
 data1 <- data %>%
   filter(StainingSet == "SS1Layout1Set1") %>%
   select(where(~ any(!is.na(.x)))) %>%
@@ -503,13 +892,13 @@ data1 %>%
 ```
 
 
-```{r, eval=FALSE}
+```{r, eval=FALSE, include=FALSE}
 data %>%
   filter(StainingSet == "SS1Layout1Set1") %>%
   select(plate, Ligand, ECMp, Spot_PA_SpotCellCount, contains("AreaShape"))
 ```
 
-```{r, eval=FALSE}
+```{r, eval=FALSE, include=FALSE}
 data %>%
   select(StainingSet, contains("neighbor")) %>%
   ggplot(aes(Nuclei_PA_AreaShape_Neighbors, color = StainingSet)) +
@@ -533,7 +922,7 @@ data %>%
   deframe()
 ```
 
-```{r, eval=FALSE}
+```{r, eval=FALSE, include=FALSE}
 data %>%
   filter(StainingSet == "SS1Layout1Set1") %>%
   rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
