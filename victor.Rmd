@@ -407,6 +407,54 @@ make_first_pc_loadings_plot <- function(pca_results, title) {
     theme_bw() +
     theme(plot.title = element_text(hjust = 0.5))
 }
+
+make_first_2_pcs_loadings_plot_no_pattern <- function(pca_results, title) {
+  pca_results %>%
+    `$`("rotation") %>%
+    `[`(, c("PC1", "PC2")) %>%
+    as_tibble(rownames = "col") %>%
+    rename(loading1 = PC1, loading2 = PC2) %>%
+    ggplot(aes(loading1, loading2)) +
+    geom_point() +
+    labs(x = "PC1 Loading", y = "PC2 Loading", title = title) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+
+make_first_2_pcs_loadings_plot_pattern <- function(pca_results,
+                                                    pattern,
+                                                    title) {
+  pca_results %>%
+    `$`("rotation") %>%
+    `[`(, c("PC1", "PC2")) %>%
+    as_tibble(rownames = "col") %>%
+    rename(loading1 = PC1, loading2 = PC2) %>%
+    mutate(
+      col_parts = str_split(col, "_"),
+      subset1 = map_chr(col_parts, 1),
+      subset2 = map_chr(col_parts, 3)
+    ) %>%
+    select(!col_parts) %>%
+    select(where(~ !all(str_detect(.x, pattern)))) %>%
+    rename_with(str_remove, starts_with("subset"), pattern = "\\d$") %>%
+    ggplot(aes(loading1, loading2, color = subset)) +
+    geom_point() +
+    labs(
+      x = "PC1 Loading", y = "PC2 Loading",
+      color = "Subset",
+      title = title
+    ) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+
+make_first_2_pcs_loadings_plot <- function(pca_results, pattern = ".*", title) {
+  if (pattern == ".*") {
+    make_first_2_pcs_loadings_plot_no_pattern(pca_results, title)
+  } else {
+    make_first_2_pcs_loadings_plot_pattern(pca_results, pattern, title)
+  }
+}
 ```
 
 The plots below show that the first 20-30 PCs capture around 95\% of the variation for each staining set.
@@ -425,10 +473,20 @@ all_data2 %>%
     ),
     first_pc_loadings_plot = map2(
       pca_results, title, make_first_pc_loadings_plot
+    ),
+    title = map_chr(
+      ss_num, ~ str_interp("PC1, PC2 Loadings for Staining Set ${.x}")
+    ),
+    first_2_pcs_loadings_plot = map2(
+      pca_results, title, make_first_2_pcs_loadings_plot, pattern = ".*"
     )
   ) %>%
   with(
-    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+    {
+      walk(prop_var_explained_plot, print)
+      walk(first_pc_loadings_plot, print)
+      walk(first_2_pcs_loadings_plot, print)
+    }
   )
 ```
 
@@ -481,12 +539,13 @@ all_data2 %>%
 
 Looking only at the AreaShape variables, fewer than ten PCs account for over 95\% of the variation. In particular, for staining set 2, just four PCs account for that percentage of the variation.
 ```{r areashape_pca}
+pattern <- "AreaShape"
 all_data2 %>%
   mutate(
-    pca_results = map(data, run_pca, pattern = "AreaShape"),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, AreaShape Variables Only")
+      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
@@ -494,26 +553,40 @@ all_data2 %>%
     title = map_chr(
       ss_num,
       ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, AreaShape Variables Only"
+        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
       )
     ),
     first_pc_loadings_plot = map2(
       pca_results, title, make_first_pc_loadings_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_2_pcs_loadings_plot = map2(
+      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
     )
   ) %>%
   with(
-    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+    {
+      walk(prop_var_explained_plot, print)
+      walk(first_pc_loadings_plot, print)
+      walk(first_2_pcs_loadings_plot, print)
+    }
   )
 ```
 
 We next consider the Intensity variables. For staining sets 1 and 2, around five PCs capture 95\% of the variation. However, for staining set 3, 12-13 PCs are needed.
 ```{r intensity_pca}
+pattern <- "Intensity"
 all_data2 %>%
   mutate(
-    pca_results = map(data, run_pca, pattern = "Intensity"),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, Intensity Variables Only")
+      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
@@ -521,76 +594,40 @@ all_data2 %>%
     title = map_chr(
       ss_num,
       ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, Intensity Variables Only"
+        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
       )
     ),
     first_pc_loadings_plot = map2(
       pca_results, title, make_first_pc_loadings_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_2_pcs_loadings_plot = map2(
+      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
     )
   ) %>%
   with(
-    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+    {
+      walk(prop_var_explained_plot, print)
+      walk(first_pc_loadings_plot, print)
+      walk(first_2_pcs_loadings_plot, print)
+    }
   )
 ```
 
 For each staining set, the top two PCs account for all of the variation.
 ```{r cycle_pca}
+pattern <- "Cycle"
 all_data2 %>%
   mutate(
-    pca_results = map(data, run_pca, pattern = "Cycle"),
-    title = map_chr(
-      ss_num, ~ str_interp("PCA for Staining Set ${.x}, Cycle Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
-      ~ str_interp("PC1 Loadings for Staining Set ${.x}, Cycle Variables Only")
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    )
-  ) %>%
-  with(
-    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
-  )
-```
-
-We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed.
-```{r gated_pca}
-all_data2 %>%
-  filter(ss_num != 1) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = "Gated"),
-    title = map_chr(
-      ss_num, ~ str_interp("PCA for Staining Set ${.x}, Gated Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PC1 Loadings for Staining Set ${.x}, Gated Variables Only")
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    )
-  ) %>%
-  with(
-    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
-  )
-```
-
-The Texture variables were only measured for staining set 2. Six PCs account for 95\% of the variation.
-```{r texture_pca}
-all_data2 %>%
-  filter(ss_num == 2) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = "Texture"),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, Texture Variables Only")
+      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
@@ -598,15 +635,112 @@ all_data2 %>%
     title = map_chr(
       ss_num,
       ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, Texture Variables Only"
+        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
       )
     ),
     first_pc_loadings_plot = map2(
       pca_results, title, make_first_pc_loadings_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_2_pcs_loadings_plot = map2(
+      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
     )
   ) %>%
   with(
-    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+    {
+      walk(prop_var_explained_plot, print)
+      walk(first_pc_loadings_plot, print)
+      walk(first_2_pcs_loadings_plot, print)
+    }
+  )
+```
+
+We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed.
+```{r gated_pca}
+pattern <- "Gated"
+all_data2 %>%
+  filter(ss_num != 1) %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = pattern),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_2_pcs_loadings_plot = map2(
+      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
+    )
+  ) %>%
+  with(
+    {
+      walk(prop_var_explained_plot, print)
+      walk(first_pc_loadings_plot, print)
+      walk(first_2_pcs_loadings_plot, print)
+    }
+  )
+```
+
+The Texture variables were only measured for staining set 2. Six PCs account for 95\% of the variation.
+```{r texture_pca}
+pattern <- "Texture"
+all_data2 %>%
+  filter(ss_num == 2) %>%
+  mutate(
+    pca_results = map(data, run_pca, pattern = pattern),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
+    ),
+    prop_var_explained_plot = map2(
+      pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_2_pcs_loadings_plot = map2(
+      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
+    )
+  ) %>%
+  with(
+    {
+      walk(prop_var_explained_plot, print)
+      walk(first_pc_loadings_plot, print)
+      walk(first_2_pcs_loadings_plot, print)
+    }
   )
 ```
 
@@ -625,38 +759,56 @@ all_data2 %>%
 
 Looking at the Cells variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 3, the number is nine.
 ```{r cells_pca}
+pattern <- "Cells"
 all_data2 %>%
   filter(ss_num != 2) %>%
   mutate(
     pca_results = map(data, run_pca, pattern = "Cells"),
     title = map_chr(
-      ss_num, ~ str_interp("PCA for Staining Set ${.x}, Cells Variables Only")
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
     ),
     title = map_chr(
       ss_num,
-      ~ str_interp("PC1 Loadings for Staining Set ${.x}, Cells Variables Only")
+      ~ str_interp(
+        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
     ),
     first_pc_loadings_plot = map2(
       pca_results, title, make_first_pc_loadings_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_2_pcs_loadings_plot = map2(
+      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
     )
   ) %>%
   with(
-    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+    {
+      walk(prop_var_explained_plot, print)
+      walk(first_pc_loadings_plot, print)
+      walk(first_2_pcs_loadings_plot, print)
+    }
   )
 ```
 
 Looking at the Cytoplasm variables, for staining set 1, the first eight PCs account for 95\% of the variation. For staining set 3, the number is 15.
 ```{r cytoplasm_pca}
+pattern <- "Cytoplasm"
 all_data2 %>%
   filter(ss_num != 2) %>%
   mutate(
     pca_results = map(data, run_pca, pattern = "Cytoplasm"),
     title = map_chr(
       ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, Cytoplasm Variables Only")
+      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
@@ -664,25 +816,40 @@ all_data2 %>%
     title = map_chr(
       ss_num,
       ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, Cytoplasm Variables Only"
+        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
       )
     ),
     first_pc_loadings_plot = map2(
       pca_results, title, make_first_pc_loadings_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_2_pcs_loadings_plot = map2(
+      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
     )
   ) %>%
   with(
-    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+    {
+      walk(prop_var_explained_plot, print)
+      walk(first_pc_loadings_plot, print)
+      walk(first_2_pcs_loadings_plot, print)
+    }
   )
 ```
 
 Looking at the Nuclei variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 2, the number is around 17. For staining set 3, the number is 11.
 ```{r nuclei_pca}
+pattern <- "Nuclei"
 all_data2 %>%
   mutate(
-    pca_results = map(data, run_pca, pattern = "Nuclei"),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
-      ss_num, ~ str_interp("PCA for Staining Set ${.x}, Nuclei Variables Only")
+      ss_num,
+      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
@@ -690,15 +857,28 @@ all_data2 %>%
     title = map_chr(
       ss_num,
       ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, Nuclei Variables Only"
+        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
       )
     ),
     first_pc_loadings_plot = map2(
       pca_results, title, make_first_pc_loadings_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
+      )
+    ),
+    first_2_pcs_loadings_plot = map2(
+      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
     )
   ) %>%
   with(
-    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+    {
+      walk(prop_var_explained_plot, print)
+      walk(first_pc_loadings_plot, print)
+      walk(first_2_pcs_loadings_plot, print)
+    }
   )
 ```
 
