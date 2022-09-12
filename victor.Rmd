@@ -395,6 +395,18 @@ make_prop_var_explained_plot <- function(pca_results, title) {
   brks <- layer_scales(plot)$y$get_breaks()
   plot + scale_y_continuous(breaks = c(brks, 0.95))
 }
+
+make_first_pc_loadings_plot <- function(pca_results, title) {
+  pca_results %>%
+    `$`("rotation") %>%
+    `[`(, "PC1") %>%
+    enframe(name = "col", value = "loading") %>%
+    ggplot(aes(loading)) +
+    geom_histogram(color = "black", fill = "lightgray", binwidth = 0.01) +
+    labs(x = "Loading", y = "Number of Variables", title = title) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5))
+}
 ```
 
 The plots below show that the first 20-30 PCs capture around 95\% of the variation for each staining set.
@@ -407,9 +419,17 @@ all_data2 %>%
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num, ~ str_interp("PC1 Loadings for Staining Set ${.x}")
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
     )
   ) %>%
-  with(walk(prop_var_explained_plot, print))
+  with(
+    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+  )
 ```
 
 ```{r pca_by_plate, eval=FALSE, include=FALSE}
@@ -470,9 +490,20 @@ all_data2 %>%
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1 Loadings for Staining Set ${.x}, AreaShape Variables Only"
+      )
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
     )
   ) %>%
-  with(walk(prop_var_explained_plot, print))
+  with(
+    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+  )
 ```
 
 We next consider the Intensity variables. For staining sets 1 and 2, around five PCs capture 95\% of the variation. However, for staining set 3, 12-13 PCs are needed.
@@ -486,9 +517,20 @@ all_data2 %>%
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1 Loadings for Staining Set ${.x}, Intensity Variables Only"
+      )
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
     )
   ) %>%
-  with(walk(prop_var_explained_plot, print))
+  with(
+    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+  )
 ```
 
 For each staining set, the top two PCs account for all of the variation.
@@ -497,14 +539,22 @@ all_data2 %>%
   mutate(
     pca_results = map(data, run_pca, pattern = "Cycle"),
     title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, Cycle Variables Only")
+      ss_num, ~ str_interp("PCA for Staining Set ${.x}, Cycle Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PC1 Loadings for Staining Set ${.x}, Cycle Variables Only")
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
     )
   ) %>%
-  with(walk(prop_var_explained_plot, print))
+  with(
+    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+  )
 ```
 
 We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed.
@@ -514,14 +564,22 @@ all_data2 %>%
   mutate(
     pca_results = map(data, run_pca, pattern = "Gated"),
     title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, Gated Variables Only")
+      ss_num, ~ str_interp("PCA for Staining Set ${.x}, Gated Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PC1 Loadings for Staining Set ${.x}, Gated Variables Only")
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
     )
   ) %>%
-  with(walk(prop_var_explained_plot, print))
+  with(
+    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+  )
 ```
 
 The Texture variables were only measured for staining set 2. Six PCs account for 95\% of the variation.
@@ -536,9 +594,20 @@ all_data2 %>%
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1 Loadings for Staining Set ${.x}, Texture Variables Only"
+      )
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
     )
   ) %>%
-  with(walk(prop_var_explained_plot, print))
+  with(
+    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+  )
 ```
 
 ### PCA by Cell Part
@@ -561,14 +630,22 @@ all_data2 %>%
   mutate(
     pca_results = map(data, run_pca, pattern = "Cells"),
     title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, Cells Variables Only")
+      ss_num, ~ str_interp("PCA for Staining Set ${.x}, Cells Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp("PC1 Loadings for Staining Set ${.x}, Cells Variables Only")
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
     )
   ) %>%
-  with(walk(prop_var_explained_plot, print))
+  with(
+    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+  )
 ```
 
 Looking at the Cytoplasm variables, for staining set 1, the first eight PCs account for 95\% of the variation. For staining set 3, the number is 15.
@@ -583,9 +660,20 @@ all_data2 %>%
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1 Loadings for Staining Set ${.x}, Cytoplasm Variables Only"
+      )
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
     )
   ) %>%
-  with(walk(prop_var_explained_plot, print))
+  with(
+    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+  )
 ```
 
 Looking at the Nuclei variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 2, the number is around 17. For staining set 3, the number is 11.
@@ -594,14 +682,24 @@ all_data2 %>%
   mutate(
     pca_results = map(data, run_pca, pattern = "Nuclei"),
     title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, Nuclei Variables Only")
+      ss_num, ~ str_interp("PCA for Staining Set ${.x}, Nuclei Variables Only")
     ),
     prop_var_explained_plot = map2(
       pca_results, title, make_prop_var_explained_plot
+    ),
+    title = map_chr(
+      ss_num,
+      ~ str_interp(
+        "PC1 Loadings for Staining Set ${.x}, Nuclei Variables Only"
+      )
+    ),
+    first_pc_loadings_plot = map2(
+      pca_results, title, make_first_pc_loadings_plot
     )
   ) %>%
-  with(walk(prop_var_explained_plot, print))
+  with(
+    {walk(prop_var_explained_plot, print); walk(first_pc_loadings_plot, print)}
+  )
 ```
 
 # Delete/update chunks below
