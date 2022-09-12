@@ -9,6 +9,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(tools)
 library(psych)
+library(tictoc)
 ```
 
 ```{r read_data, cache=TRUE, echo=FALSE, message=FALSE}
@@ -115,6 +116,7 @@ ct_sl_summary_df
 ```
 
 ```{r Big Spearman correlation tibble}
+tic()
 cor_tbl_list = vector(mode = "list", length = length(tbls))
 for(i in seq_along(cor_tbl_list)){
   tbls2 = tbls[[i]] %>%
@@ -140,7 +142,8 @@ for(i in seq_along(cor_tbl_list)){
       select(!treatment) %>%
       select(where(function(x) length(unique(x)) > 1))
     if(length(treat_tbl) != 0){
-      cor_test_out = corr.test(treat_tbl, method = "spearman", ci = FALSE)
+      cor_test_out = corr.test(treat_tbl, method = "spearman", ci = FALSE,
+                               normal = TRUE)
       p_mat_simple = cor_test_out[["p"]]
       p_mat_simple[upper.tri(p_mat_simple)] = 2 # Filters out repeats later
       p_tbl = p_mat_simple %>%
@@ -165,22 +168,51 @@ for(i in seq_along(cor_tbl_list)){
   cor_tbl_list[[i]] = bind_rows(cor_list)
 }
 big_cor_tbl = bind_rows(cor_tbl_list) %>%
-  arrange(p_val)
-
-small_big_cor_tbl = big_cor_tbl %>%
+  mutate(stain_num = floor((table_num-1/2)/8) + 1) %>%
+  select(stain_num, everything()) %>%
+  arrange(p_val) %>%
   filter(n >= 10) %>%
   mutate(row_num = 1:nrow(.)) %>%
   mutate(pass_holm = p_val <= 0.01/(nrow(big_cor_tbl) - row_num + 1)) %>%
+  select(!row_num)
+  
+small_big_cor_tbl = big_cor_tbl %>%
   filter(pass_holm == TRUE) %>%
-  select(!row_num & !pass_holm)
+  select(!pass_holm)
 # I don't think the p-values equalling 0 are correct but this shouldn't matter
 # p-value obtained from t-test
-# Could get btter p-values using better test but could take a long time
+# Could get better p-values using better test but could take a long time
 # write_tsv(small_big_cor_tbl, "small_big_cor_tbl.tsv")  
+toc()
 ```
 
 
+```{r Frequency of treatments in significant set}
+# Doesn't seem interesting
+small_big_cor_tbl %>% 
+  filter(spear_cor == 1) %>% 
+  unite(col = "treat_stain", stain_num, treatment, sep = ":") %>%
+  .[["treat_stain"]] %>% 
+  table() %>% 
+  sort(decreasing = TRUE) -> pos_sig_treat_count
+table(pos_sig_treat_count)
+pos_sig_treat_count[1:20]
+  
+small_big_cor_tbl %>% 
+  filter(spear_cor == -1) %>% 
+  unite(col = "treat_stain", stain_num, treatment, sep = ":") %>%
+  .[["treat_stain"]] %>% 
+  table() %>% 
+  sort(decreasing = TRUE) -> neg_sig_treat_count
+table(neg_sig_treat_count)
+neg_sig_treat_count[1:20]
+```
 
+```{r}
+small_big_cor_tbl %>%
+  filter(treatment == "TNC|1_P24821|1:FBS_pubchemsid56314508") %>%
+  select(row_var, col_var, spear_cor)
+```
 
 
 
