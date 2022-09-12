@@ -272,7 +272,7 @@ No variable name contains "|".
 select(all_data, contains("|"))
 ```
 
-Define a function for calculating the medians and IQRs of all non-trivial numeric variables in a dataset whose names match a pattern. The output has one row for each variable and columns with the summary statistics. For each staining set, the five variables with the largest medians are also shown.
+Define a function for calculating the standard deviations and IQRs of all non-trivial numeric variables in a dataset whose names match a pattern. The output has one row for each variable and columns with the summary statistics.
 ```{r summary_stats_funcs}
 calc_summary_stats <- function(data, pattern = ".*") {
   data %>%
@@ -284,7 +284,7 @@ calc_summary_stats <- function(data, pattern = ".*") {
         matches(pattern)
     ) %>%
     summarize(
-      across(.fns = list(median = median, iqr = IQR), .names = "{.col}|{.fn}")
+      across(.fns = list(sd = sd, iqr = IQR), .names = "{.col}|{.fn}")
     ) %>%
     pivot_longer(
       cols = everything(), names_to = c("col", ".value"), names_sep = "\\|"
@@ -292,11 +292,11 @@ calc_summary_stats <- function(data, pattern = ".*") {
 }
 
 make_summary_stats_plot <- function(summary_stats, title) {
-  median_panel <- summary_stats %>%
-    mutate(log_median = log10(median - min(median) + 1)) %>%
-    ggplot(aes(log_median)) +
+  sd_panel <- summary_stats %>%
+    mutate(log_sd = log10(sd - min(sd) + 1)) %>%
+    ggplot(aes(log_sd)) +
     geom_histogram(color = "black", fill = "lightgray", bins = 10) +
-    labs(x = "Log Median", y = "Number of Variables") +
+    labs(x = "Log Standard Deviation", y = "Number of Variables") +
     theme_bw()
   iqr_panel <- summary_stats %>%
     mutate(log_iqr = log10(iqr - min(iqr) + 1)) %>%
@@ -304,11 +304,11 @@ make_summary_stats_plot <- function(summary_stats, title) {
     geom_histogram(color = "black", fill = "lightgray", bins = 10) +
     labs(x = "Log IQR", y = "Number of Variables") +
     theme_bw()
-  arrangeGrob(median_panel, iqr_panel, nrow = 1, top = title)
+  arrangeGrob(sd_panel, iqr_panel, nrow = 1, top = title)
 }
 ```
 
-The histograms below show the log-transformed medians and IQRs of all of the variables. For each staining set, there is a fair amount of variation in scale across variables - some variables are on a much larger scale than others. This means that rescaling before performing PCA is absolutely necessary. Otherwise, the top PCs will largely reflect the variables with the largest scales. For each staining set, the five variables with the largest medians are also shown.
+The histograms below show the log-transformed standard deviations and IQRs of all of the variables. For each staining set, there is a fair amount of variation in scale across variables - some variables are on a much larger scale than others. This means that rescaling before performing PCA is absolutely necessary. Otherwise, the top PCs will largely reflect the variables with the largest scales. For each staining set, the five variables with the largest standard deviations are also shown.
 ```{r summary_stats, message=FALSE}
 all_summary_stats <- all_data2 %>%
   mutate(
@@ -324,7 +324,7 @@ with(all_summary_stats, walk(summary_stats_plot, grid.arrange))
 all_summary_stats %>%
   mutate(
     summary_stats = map(
-      summary_stats, ~ slice(arrange(.x, desc(median)), n = 1:5)
+      summary_stats, ~ slice(arrange(.x, desc(sd)), n = 1:5)
     )
   ) %>%
   select(ss_num, summary_stats) %>%
@@ -334,7 +334,7 @@ all_summary_stats %>%
 rm(all_summary_stats)
 ```
 
-The histograms below show the log-transformed medians and IQRs of the AreaShape variables. We again see that the variables differ in scale substantially. 
+The histograms below show the log-transformed standard deviations and IQRs of the AreaShape variables. We again see that the variables differ in scale substantially. 
 ```{r areashape_summary_stats, message=FALSE}
 all_summary_stats <- all_data2 %>%
   mutate(
@@ -350,7 +350,7 @@ with(all_summary_stats, walk(summary_stats_plot, grid.arrange))
 all_summary_stats %>%
   mutate(
     summary_stats = map(
-      summary_stats, ~ slice(arrange(.x, desc(median)), n = 1:5)
+      summary_stats, ~ slice(arrange(.x, desc(sd)), n = 1:5)
     )
   ) %>%
   select(ss_num, summary_stats) %>%
