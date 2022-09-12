@@ -537,7 +537,7 @@ all_data2 %>%
   print(width = 100)
 ```
 
-Looking only at the AreaShape variables, fewer than ten PCs account for over 95\% of the variation. In particular, for staining set 2, just four PCs account for that percentage of the variation.
+Looking only at the AreaShape variables, fewer than ten PCs account for over 95\% of the variation. In particular, for staining set 2, just four PCs account for that percentage of the variation. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r areashape_pca}
 pattern <- "AreaShape"
 all_data2 %>%
@@ -578,7 +578,7 @@ all_data2 %>%
   )
 ```
 
-We next consider the Intensity variables. For staining sets 1 and 2, around five PCs capture 95\% of the variation. However, for staining set 3, 12-13 PCs are needed.
+We next consider the Intensity variables. For staining sets 1 and 2, around five PCs capture 95\% of the variation. However, for staining set 3, 12-13 PCs are needed. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r intensity_pca}
 pattern <- "Intensity"
 all_data2 %>%
@@ -619,7 +619,7 @@ all_data2 %>%
   )
 ```
 
-For each staining set, the top two PCs account for all of the variation.
+For the Cycle variables, for each staining set, the top two PCs account for all of the variation.  Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r cycle_pca}
 pattern <- "Cycle"
 all_data2 %>%
@@ -660,7 +660,7 @@ all_data2 %>%
   )
 ```
 
-We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed.
+We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r gated_pca}
 pattern <- "Gated"
 all_data2 %>%
@@ -702,7 +702,7 @@ all_data2 %>%
   )
 ```
 
-The Texture variables were only measured for staining set 2. Six PCs account for 95\% of the variation.
+The Texture variables were only measured for staining set 2. Six PCs account for 95\% of the variation. The plot of the PC1 and PC2 loadings seems to suggest that the variables can be partitioned into three clusters.
 ```{r texture_pca}
 pattern <- "Texture"
 all_data2 %>%
@@ -757,7 +757,7 @@ all_data2 %>%
   select(!c(StainingSet, ss_num, data))
 ```
 
-Looking at the Cells variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 3, the number is nine.
+Looking at the Cells variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 3, the number is nine. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r cells_pca}
 pattern <- "Cells"
 all_data2 %>%
@@ -799,7 +799,7 @@ all_data2 %>%
   )
 ```
 
-Looking at the Cytoplasm variables, for staining set 1, the first eight PCs account for 95\% of the variation. For staining set 3, the number is 15.
+Looking at the Cytoplasm variables, for staining set 1, the first eight PCs account for 95\% of the variation. For staining set 3, the number is 15. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r cytoplasm_pca}
 pattern <- "Cytoplasm"
 all_data2 %>%
@@ -841,7 +841,7 @@ all_data2 %>%
   )
 ```
 
-Looking at the Nuclei variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 2, the number is around 17. For staining set 3, the number is 11.
+Looking at the Nuclei variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 2, the number is around 17. For staining set 3, the number is 11. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r nuclei_pca}
 pattern <- "Nuclei"
 all_data2 %>%
