@@ -131,7 +131,9 @@ for(i in seq_along(cor_tbl_list)){
     select(treatment, everything()) %>%
     select(!PrintSpot & !ImageID & !ClarionID) %>%
     select(Nuclei_CP_AreaShape_Area | !contains("_AreaShape_")) %>%
-    select(!contains("_90_") | !ends_with("_90")) %>%
+    select(!contains("_90_") & !ends_with("_90")) %>%
+    select(!contains("_SE_") & !ends_with("_SE")) %>%
+    select(!contains("DNA2")) %>%
     select(!contains("_IntegratedIntensity"))
     
   cor_list = vector(mode = "list", length = length(unique(treatments)))
@@ -173,7 +175,7 @@ big_cor_tbl = bind_rows(cor_tbl_list) %>%
   arrange(p_val) %>%
   filter(n >= 10) %>%
   mutate(row_num = 1:nrow(.)) %>%
-  mutate(pass_holm = p_val <= 0.01/(nrow(big_cor_tbl) - row_num + 1)) %>%
+  mutate(pass_holm = p_val <= 0.01/(length(row_num) - row_num + 1)) %>%
   select(!row_num)
   
 small_big_cor_tbl = big_cor_tbl %>%
@@ -184,6 +186,81 @@ small_big_cor_tbl = big_cor_tbl %>%
 # Could get better p-values using better test but could take a long time
 # write_tsv(small_big_cor_tbl, "small_big_cor_tbl.tsv")  
 toc()
+# 4 minutes to run
+```
+
+```{r Big linear correlation tibble}
+tic()
+cor_tbl_list = vector(mode = "list", length = length(tbls))
+for(i in seq_along(cor_tbl_list)){
+  tbls2 = tbls[[i]] %>%
+  unite(ECM1, Ligand1, col = "treatment", sep = ":")
+  treatments = tbls2[["treatment"]]
+  
+  tbls_reduced = tbls[[i]] %>%
+    select(!(WellIndex:PinDiameter)) %>%
+    select(where(is.numeric)) %>%
+    select(where(function(x) length(unique(x)) > 8)) %>%
+    mutate(treatment = treatments) %>%
+    select(treatment, everything()) %>%
+    select(!PrintSpot & !ImageID & !ClarionID) %>%
+    select(Nuclei_CP_AreaShape_Area | !contains("_AreaShape_")) %>%
+    select(!contains("_90_") & !ends_with("_90")) %>%
+    select(!contains("_SE_") & !ends_with("_SE")) %>%
+    select(!contains("DNA2")) %>%
+    select(!contains("_IntegratedIntensity"))
+    
+  cor_list = vector(mode = "list", length = length(unique(treatments)))
+  names(cor_list) = unique(treatments)
+  for(j in seq_along(cor_list)){
+    treat_tbl = tbls_reduced %>% 
+      filter(treatment == unique(treatments)[[j]]) %>%
+      select(!treatment) %>%
+      select(where(function(x) length(unique(x)) > 1))
+    if(length(treat_tbl) != 0){
+      cor_test_out = corr.test(treat_tbl, method = "pearson", ci = FALSE,
+                               normal = TRUE)
+      p_mat_simple = cor_test_out[["p"]]
+      p_mat_simple[upper.tri(p_mat_simple)] = 2 # Filters out repeats later
+      p_tbl = p_mat_simple %>%
+        as.data.frame() %>%
+        rownames_to_column(var = "row_var") %>%
+        pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
+        rename(p_val = value)
+      cor_list[[j]] = cor_test_out[["r"]] %>%
+        as.data.frame() %>%
+        rownames_to_column(var = "row_var") %>%
+        pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
+        rename(lin_cor = value) %>%
+        left_join(p_tbl, by = c("row_var", "col_var")) %>%
+        filter(p_val <= 1, row_var != col_var) %>%
+        mutate(treatment = names(cor_list)[[j]], table_num = i) %>%
+        select(table_num, treatment, everything()) %>%
+        separate(treatment, into = c("ECM1", "Ligand1"), sep = ":", 
+                 remove = FALSE) %>%
+        mutate(n = cor_test_out[["n"]])
+    }
+  }
+  cor_tbl_list[[i]] = bind_rows(cor_list)
+}
+big_lin_cor_tbl = bind_rows(cor_tbl_list) %>%
+  mutate(stain_num = floor((table_num-1/2)/8) + 1) %>%
+  select(stain_num, everything()) %>%
+  arrange(p_val) %>%
+  filter(n >= 10) %>%
+  mutate(row_num = 1:nrow(.)) %>%
+  mutate(pass_holm = p_val <= 0.01/(length(row_num) - row_num + 1)) %>%
+  select(!row_num)
+  
+small_big_lin_cor_tbl = big_lin_cor_tbl %>%
+  filter(pass_holm == TRUE) %>%
+  select(!pass_holm)
+# I don't think the p-values equalling 0 are correct but this shouldn't matter
+# p-value obtained from t-test
+# Could get better p-values using better test but could take a long time
+# write_tsv(small_big_lin_cor_tbl, "small_big_lin_cor_tbl.tsv")  
+toc()
+# 4 minutes to run
 ```
 
 
@@ -213,6 +290,142 @@ small_big_cor_tbl %>%
   filter(treatment == "TNC|1_P24821|1:FBS_pubchemsid56314508") %>%
   select(row_var, col_var, spear_cor)
 ```
+
+```{r}
+small_big_lin_cor_tbl %>%
+  filter(lin_cor < 0.99 & lin_cor > -0.99) %>% 
+  View()
+```
+
+```{r Focus on somewhat interesting treatments }
+tic()
+cor_tbl_list = vector(mode = "list", length = length(tbls))
+for(i in seq_along(cor_tbl_list)){
+  tbls2 = tbls[[i]] %>%
+    filter(ECM1 == "OMD_Q99983" | ECM1 == "NID1|1_P14543|1" | 
+             ECM1 == "FN1|1_P02751|1" | ECM1 == "ELN|3_P15502|3" |
+             ECM1 == "COL5A1_P20908" | ECM1 == "COL4_go0005587" |
+             ECM1 == "FBN1_P35555") %>%
+    filter(Ligand1 == "BMP2_P12643" | Ligand1 == "GPNMB|1_Q14956|1" |
+             Ligand1 == "IGF1|1_P05019|1" | Ligand1 == "NRG1|6_Q02297|6"|
+             Ligand1 == "BMP2_P12643" | Ligand1 == "BMP5|1_P22003|1" | 
+             Ligand1 == "FGF2|3_P09038|2" | Ligand1 == "CSF2_P04141") %>%
+  unite(ECM1, Ligand1, col = "treatment", sep = ":")
+  treatments = tbls2[["treatment"]]
+  if(length(treatments > 0)){
+    tbls_reduced = tbls[[i]] %>%
+    filter(ECM1 == "OMD_Q99983" | ECM1 == "NID1|1_P14543|1" | 
+             ECM1 == "FN1|1_P02751|1" | ECM1 == "ELN|3_P15502|3" |
+             ECM1 == "COL5A1_P20908" | ECM1 == "COL4_go0005587" |
+             ECM1 == "FBN1_P35555") %>%
+    filter(Ligand1 == "BMP2_P12643" | Ligand1 == "GPNMB|1_Q14956|1" |
+             Ligand1 == "IGF1|1_P05019|1" | Ligand1 == "NRG1|6_Q02297|6"|
+             Ligand1 == "BMP2_P12643" | Ligand1 == "BMP5|1_P22003|1" | 
+             Ligand1 == "FGF2|3_P09038|2" | Ligand1 == "CSF2_P04141") %>%
+    select(!(WellIndex:PinDiameter)) %>%
+    select(where(is.numeric)) %>%
+    select(where(function(x) length(unique(x)) > 8)) %>%
+    mutate(treatment = treatments) %>%
+    select(treatment, everything()) %>%
+    select(!PrintSpot & !ImageID & !ClarionID) %>%
+    select(Nuclei_CP_AreaShape_Area | !contains("_AreaShape_")) %>%
+    select(!contains("_90_") & !ends_with("_90")) %>%
+    select(!contains("_SE_") & !ends_with("_SE")) %>%
+      select(!contains("DNA2")) %>%
+    select(!contains("_IntegratedIntensity")) 
+    
+    cor_list = vector(mode = "list", length = length(unique(treatments)))
+    names(cor_list) = unique(treatments)
+    for(j in seq_along(cor_list)){
+      treat_tbl = tbls_reduced %>% 
+        filter(treatment == unique(treatments)[[j]]) %>%
+        select(!treatment) %>%
+        select(where(function(x) length(unique(x)) > 1))
+      if(length(treat_tbl) != 0){
+        cor_test_out = corr.test(treat_tbl, method = "spearman", ci = FALSE,
+                                 normal = TRUE)
+        p_mat_simple = cor_test_out[["p"]]
+        p_mat_simple[upper.tri(p_mat_simple)] = 2 # Filters out repeats later
+        p_tbl = p_mat_simple %>%
+          as.data.frame() %>%
+          rownames_to_column(var = "row_var") %>%
+          pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
+          rename(p_val = value)
+        cor_list[[j]] = cor_test_out[["r"]] %>%
+          as.data.frame() %>%
+          rownames_to_column(var = "row_var") %>%
+          pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
+          rename(spear_cor = value) %>%
+          left_join(p_tbl, by = c("row_var", "col_var")) %>%
+          filter(p_val <= 1, row_var != col_var) %>%
+          mutate(treatment = names(cor_list)[[j]], table_num = i) %>%
+          select(table_num, treatment, everything()) %>%
+          separate(treatment, into = c("ECM1", "Ligand1"), sep = ":", 
+                   remove = FALSE) %>%
+          mutate(n = cor_test_out[["n"]])
+      }
+    }
+    cor_tbl_list[[i]] = bind_rows(cor_list)
+  }
+}
+focus_big_cor_tbl = bind_rows(cor_tbl_list) %>%
+  mutate(stain_num = floor((table_num-1/2)/8) + 1) %>%
+  select(stain_num, everything()) %>%
+  arrange(p_val) %>%
+  filter(n >= 10) %>%
+  mutate(row_num = 1:nrow(.)) %>%
+  mutate(pass_holm = p_val <= 0.01/(length(row_num) - row_num + 1)) %>%
+  select(!row_num) %>%
+  unite(col = "relation", row_var, col_var, sep = ":", remove = FALSE)
+  
+focus_small_big_cor_tbl = focus_big_cor_tbl %>%
+  filter(pass_holm == TRUE) %>%
+  select(!pass_holm)
+# I don't think the p-values equalling 0 are correct but this shouldn't matter
+# p-value obtained from t-test
+# Could get better p-values using better test but could take a long time
+# write_tsv(small_big_cor_tbl, "small_big_cor_tbl.tsv")  
+toc()
+```
+
+
+```{r}
+cols_per_plot = 40
+n_relations = focus_big_cor_tbl$relation %>% 
+  unique() %>% 
+  length()
+n_plots = floor(n_relations/cols_per_plot)
+for(i in 1:n_plots){
+  focus_big_cor_tbl_filtered = focus_big_cor_tbl %>%
+  mutate(treat = paste0(
+    abbreviate(ECM1),
+    ":",
+    abbreviate(Ligand1)
+  )) %>%  
+  mutate(rel = paste0(
+    abbreviate(row_var, method = "left.kept"),
+    ":",
+    abbreviate(col_var, method = "left.kept")
+  )) %>%  
+  filter(relation %in% 
+           unique(relation)[(1+(cols_per_plot*i)):(cols_per_plot*(i+1))])
+  cor_plot = ggplot(focus_big_cor_tbl_filtered, 
+        aes(rel, treat, fill = spear_cor)) +
+    geom_tile() +
+    labs(fill = "Spearman Correlation", title = paste("Plot",i), 
+         y = "Treatment", x = "Variable Pair") +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  ggsave(cor_plot, path = "plots", width = 12, height = 7,
+         filename = paste0("cor_plot",i,".png"),device = "png")
+}
+
+```
+
+
+
+
+
 
 
 
