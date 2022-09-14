@@ -109,7 +109,7 @@ check_ECM2_cols_w_nas <- function(data) {
     pull(ECMp) %>%
     table() %>%
     proportions() %>%
-    sort(decreasing = TRUE) 
+    sort(decreasing = TRUE)
 }
 all_data2 %>% mutate(map(data, check_ECM2_cols_w_nas)) %>% pull()
 ```
@@ -216,7 +216,9 @@ For each plate, make a heatmap showing the cell count for each spot and a histog
 make_heatmap <- function(StainingSet, plate, tbl) {
   tbl %>%
     ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
-    facet_wrap(vars(Well), nrow = 2, labeller = label_both) +
+    facet_wrap(
+      vars(Well), nrow = 2, labeller = partial(label_both, sep = " ")
+    ) +
     geom_tile() +
     labs(
       x = "Column Index", y = "Row Index", fill = "Cell Count",
@@ -228,7 +230,9 @@ make_heatmap <- function(StainingSet, plate, tbl) {
 make_histogram <- function(StainingSet, plate, tbl) {
   tbl %>%
     ggplot(aes(Spot_PA_SpotCellCount)) +
-    facet_wrap(vars(Well), nrow = 2, labeller = label_both) +
+    facet_wrap(
+      vars(Well), nrow = 2, labeller = partial(label_both, sep = " ")
+    ) +
     geom_histogram(binwidth = 1) +
     labs(
       x = "Cell Count", y = "Number of Spots",
@@ -907,7 +911,9 @@ make_outlyingness_plot <- function(ss_num,
   
   plate_data %>%
     ggplot(aes(ArrayColumn, ArrayRow, fill = !!col)) +
-    facet_wrap(vars(Well), nrow = 2, labeller = label_both) +
+    facet_wrap(
+      vars(Well), nrow = 2, labeller = partial(label_both, sep = " ")
+    ) +
     geom_tile() +
     labs(
       x = "Column Index", y = "Row Index", fill = fill_lab,
@@ -1141,7 +1147,7 @@ For this one plate, the counts for well 3 are lower than for the other wells. Th
 ```{r one_plate_heatmap, eval=FALSE, include=FALSE}
 LI8X00510_Level2 %>%
   ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
-  facet_wrap(vars(Well), nrow = 2, labeller = label_both) +
+  facet_wrap(vars(Well), nrow = 2, labeller = partial(label_both, sep = " ")) +
   geom_tile() +
   labs(x = "Column Index", y = "Row Index", fill = "Cell Count") +
   theme_bw()
