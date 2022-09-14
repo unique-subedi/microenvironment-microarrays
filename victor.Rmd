@@ -8,6 +8,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(cowplot)
 library(GGally)
 library(gridExtra)
+library(mrfDepth)
 library(tidyverse)
 library(tools)
 library(vctrs)
@@ -880,6 +881,108 @@ all_data2 %>%
       walk(first_2_pcs_loadings_plot, print)
     }
   )
+```
+
+# Outlier Detection
+
+```{r outlyingness_funcs}
+make_outlyingness_plot <- function(ss_num,
+                                   plate_num,
+                                   plate_data,
+                                   plot_type = c("outlyingness", "flag"),
+                                   pattern) {
+  if (plot_type == "outlyingness") {
+    col <- as.name("outlyingness")
+    fill_lab <- "Outlyingness"
+  } else {
+    col <- as.name("is_outlier")
+    fill_lab <- "Is Outlier?"
+  }
+  
+  if (pattern == ".*") {
+    title_suffix <- "All Variables"
+  } else {
+    title_suffix <- str_interp("${pattern} Variables Only")
+  }
+  
+  plate_data %>%
+    ggplot(aes(ArrayColumn, ArrayRow, fill = !!col)) +
+    facet_wrap(vars(Well), nrow = 2, labeller = label_both) +
+    geom_tile() +
+    labs(
+      x = "Column Index", y = "Row Index", fill = fill_lab,
+      title = str_interp(
+        "Staining Set ${ss_num}, Plate ${plate_num}, ${title_suffix}"
+      )
+    ) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+
+make_outlyingness_plots <- function(ss_num,
+                                    data,
+                                    pattern,
+                                    invariance_type = c(
+                                      "Affine", "Rotation", "Shift"
+                                    ),
+                                    plot_type = c("outlyingness", "flag")) {
+  pca_results <- run_pca(data, pattern)
+  lambdas <- pca_results$sdev^2
+  num_pcs <- lambdas %>%
+    {cumsum(.) / sum(.)} %>%
+    `>=`(0.95) %>%
+    which() %>%
+    min()
+  
+  outlyingness_obj <- pca_results %>%
+    `$`("x") %>%
+    `[`(, seq_len(num_pcs)) %>%
+    outlyingness(options = list(type = invariance_type))
+  
+  data <- data %>%
+    select(plate_num, Well, ArrayColumn, ArrayRow) %>%
+    add_column(
+      outlyingness = outlyingness_obj$outlyingnessX,
+      is_outlier = !outlyingness_obj$flagX
+    ) %>%
+    nest(plate_data = !plate_num) %>%
+    mutate(
+      outlyingness_plot = map2(
+        plate_num, plate_data,
+        make_outlyingness_plot,
+        ss_num = ss_num, plot_type = plot_type, pattern = pattern
+      )
+    ) %>%
+    select(plate_num, outlyingness_plot)
+}
+```
+
+```{r outlyingnesses}
+all_data2 %>%
+  mutate(
+    outlyingness_plots = map2(
+      ss_num, data,
+      make_outlyingness_plots,
+      pattern = ".*", invariance_type = "Shift", plot_type = "flag"
+    )
+  ) %>%
+  select(!data) %>%
+  unnest(outlyingness_plots) %>%
+  with(walk(outlyingness_plot, print))
+```
+
+```{r areashape_outlyingnesses}
+all_data2 %>%
+  mutate(
+    outlyingness_plots = map2(
+      ss_num, data,
+      make_outlyingness_plots,
+      pattern = "AreaShape", invariance_type = "Shift", plot_type = "flag"
+    )
+  ) %>%
+  select(!data) %>%
+  unnest(outlyingness_plots) %>%
+  with(walk(outlyingness_plot, print))
 ```
 
 # Delete/update chunks below
