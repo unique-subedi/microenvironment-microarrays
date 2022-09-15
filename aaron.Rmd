@@ -10,6 +10,7 @@ library(tidyverse)
 library(tools)
 library(psych)
 library(tictoc)
+library(gridExtra)
 ```
 
 ```{r read_data, cache=TRUE, echo=FALSE, message=FALSE}
@@ -21,6 +22,10 @@ walk(
   }
 )
 tbls <- as.list.environment(.GlobalEnv, sorted = TRUE)
+
+map_stain_num = function(y){
+  sapply(y, function(x) switch(x, 3, 1, 2))
+}
 ```
 
 Position on the plate seems to affect cell count as evidenced by splotches of low or NA (0?) cell count. Might want to account for this somehow.
@@ -176,7 +181,11 @@ big_cor_tbl = bind_rows(cor_tbl_list) %>%
   filter(n >= 10) %>%
   mutate(row_num = 1:nrow(.)) %>%
   mutate(pass_holm = p_val <= 0.01/(length(row_num) - row_num + 1)) %>%
-  select(!row_num)
+  select(!row_num) %>%
+  unite(col = "relation", row_var, col_var, sep = ":", remove = FALSE) %>%
+  mutate(treat = paste0(abbreviate(ECM1),":",abbreviate(Ligand1))) %>%  
+  mutate(rel = paste0(abbreviate(row_var),":",abbreviate(col_var))) %>%
+  mutate(stain_num = map_stain_num(stain_num))
   
 small_big_cor_tbl = big_cor_tbl %>%
   filter(pass_holm == TRUE) %>%
@@ -250,7 +259,11 @@ big_lin_cor_tbl = bind_rows(cor_tbl_list) %>%
   filter(n >= 10) %>%
   mutate(row_num = 1:nrow(.)) %>%
   mutate(pass_holm = p_val <= 0.01/(length(row_num) - row_num + 1)) %>%
-  select(!row_num)
+  select(!row_num) %>%
+  unite(col = "relation", row_var, col_var, sep = ":", remove = FALSE) %>%
+  mutate(treat = paste0(abbreviate(ECM1),":",abbreviate(Ligand1))) %>%  
+  mutate(rel = paste0(abbreviate(row_var),":",abbreviate(col_var))) %>%
+  mutate(stain_num = map_stain_num(stain_num))
   
 small_big_lin_cor_tbl = big_lin_cor_tbl %>%
   filter(pass_holm == TRUE) %>%
@@ -376,7 +389,10 @@ focus_big_cor_tbl = bind_rows(cor_tbl_list) %>%
   mutate(row_num = 1:nrow(.)) %>%
   mutate(pass_holm = p_val <= 0.01/(length(row_num) - row_num + 1)) %>%
   select(!row_num) %>%
-  unite(col = "relation", row_var, col_var, sep = ":", remove = FALSE)
+  unite(col = "relation", row_var, col_var, sep = ":", remove = FALSE) %>%
+  mutate(treat = paste0(abbreviate(ECM1),":",abbreviate(Ligand1))) %>%  
+  mutate(rel = paste0(abbreviate(row_var),":",abbreviate(col_var))) %>%
+  mutate(stain_num = map_stain_num(stain_num))
   
 focus_small_big_cor_tbl = focus_big_cor_tbl %>%
   filter(pass_holm == TRUE) %>%
@@ -389,7 +405,7 @@ toc()
 ```
 
 
-```{r}
+```{r Make a bunch of Spearman correlation plots}
 cols_per_plot = 40
 n_relations = focus_big_cor_tbl$relation %>% 
   unique() %>% 
@@ -397,16 +413,6 @@ n_relations = focus_big_cor_tbl$relation %>%
 n_plots = floor(n_relations/cols_per_plot)
 for(i in 1:n_plots){
   focus_big_cor_tbl_filtered = focus_big_cor_tbl %>%
-  mutate(treat = paste0(
-    abbreviate(ECM1),
-    ":",
-    abbreviate(Ligand1)
-  )) %>%  
-  mutate(rel = paste0(
-    abbreviate(row_var, method = "left.kept"),
-    ":",
-    abbreviate(col_var, method = "left.kept")
-  )) %>%  
   filter(relation %in% 
            unique(relation)[(1+(cols_per_plot*i)):(cols_per_plot*(i+1))])
   cor_plot = ggplot(focus_big_cor_tbl_filtered, 
@@ -422,6 +428,50 @@ for(i in 1:n_plots){
 
 ```
 
+```{r}
+big_cor_tbl %>% 
+  group_by(relation, stain_num) %>%
+  summarise(cor_vari = var(spear_cor), count = length(spear_cor)) %>%
+  arrange(desc(cor_vari)) -> cor_vari_tbl
+summary(cor_vari_tbl$cor_vari, na.rm = TRUE)
+
+stuff = vector(mode = "list", length = 6)
+for(i in 1:3){
+  cor_vari_tbl %>%
+    filter(stain_num == i) %>%
+    head() -> stuff[[1+2*(i-1)]]
+  
+  cor_vari_tbl %>%
+    filter(stain_num == i) %>%
+    tail() -> stuff[[2*i]]
+}
+help_me = bind_rows(stuff)
+
+png("help_me.png", height = 30*nrow(help_me), width = 250*ncol(help_me))
+grid.table(help_me)
+dev.off()
+
+ggplot(cor_vari_tbl) +
+  geom_boxplot(mapping = aes(group = stain_num, y = cor_vari))
+```
+
+```{r}
+stain_set_3 = bind_rows(tbls[1:8])
+stain_set_3 %>% 
+  transmute(treatment = paste0(ECM1,":",Ligand1)) -> treatments
+stain_set_3 %>% 
+  select(!(WellIndex:PinDiameter)) %>%
+  select(where(is.numeric)) %>%
+  select(where(function(x) length(unique(x)) > 8)) %>%
+  select(!PrintSpot & !ImageID & !ClarionID) %>%
+  mutate(treatment = treatments) %>%
+  select(treatment, everything()) %>%
+  group_by(treatment) %>%
+  summarize(across(everything(), list(mean))) %>%
+  ungroup() %>%
+  summarize(across(everything(), list(var))) %>%
+  t()-> dummy
+```
 
 
 
