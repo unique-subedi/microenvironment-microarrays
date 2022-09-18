@@ -550,6 +550,15 @@ toc()
 # 9 seconds to run
 ```
 
+```{r Variance of stain-ligand-grouped correlations}
+# Don't think that this is helpful
+ligand_big_cor_tbl %>% 
+  group_by(relation, stain_num) %>%
+  summarise(cor_vari = var(spear_cor), count = length(spear_cor)) %>%
+  arrange(desc(cor_vari)) -> cor_vari_tbl
+```
+
+
 # Linear model stuff
 
 Intercept is stain set 1, COL1 for ECM1, and FBS for Ligand1.
@@ -569,7 +578,7 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE){
            relevel(ref = "FBS_pubchemsid56314508")) %>%
     filter(!is.na(.[[var_name]]))
 
-  # 13.5 minutes
+  # ~13.5 minutes
   if(fit_big_lm){
     if(length(unique(lm_super_tbl$stain_num)) == 1){
       area_treatment_lm = aov(
