@@ -583,17 +583,22 @@ simple_coefficients_tbl = tibble(
 ) %>%
   extract(col = coefficient, 
            into = c("Type", "Treatment"),
-           regex = "(Ligand1|ECM1|stain_num|\\(Intercept\\))(.*)")
+           regex = "(Ligand1|ECM1|stain_num|\\(Intercept\\))(.*)") %>%
+  mutate(Positive = Value > 0)
 
 ggplot(simple_coefficients_tbl %>% 
-    filter(Type == "ECM1"),
-  aes(x = Value, y = Treatment)) +
-  geom_col()
+      filter(Type == "ECM1") %>%
+      mutate(Treatment = fct_reorder(factor(Treatment), Value)),
+  aes(x = Value, y = Treatment, fill = Positive)) +
+  geom_col() + 
+  theme(legend.position = "none")
   
 ggplot(simple_coefficients_tbl %>% 
-    filter(Type == "Ligand1"),
-  aes(x = Value, y = Treatment)) +
-  geom_col()
+      filter(Type == "Ligand1") %>%
+      mutate(Treatment = fct_reorder(factor(Treatment), Value)),
+  aes(x = Value, y = Treatment, fill = Positive)) +
+  geom_col() + 
+  theme(legend.position = "none")
 
 simple_coefficients_tbl %>%
   filter(Type == "(Intercept)" | Type == "stain_num")
