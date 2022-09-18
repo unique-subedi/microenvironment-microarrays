@@ -550,32 +550,55 @@ toc()
 # 9 seconds to run
 ```
 
-Simpler linear model (no interaction effects) has superior AIC. However, F-test suggests keeping interaction effects. For simplicity, I suggest leaving out interaction effects. 
+# Linear model stuff
 
 Intercept is stain set 1, COL1 for ECM1, and FBS for Ligand1.
 
+For Nuclei_CP_AreaShape_Area: Simpler linear model (no interaction effects) has superior AIC. However, F-test suggests keeping interaction effects. 
+
+For Spot_PA_SpotCellCount: Same results as Nuclei_CP_AreaShape_Area
+
+For simplicity, I suggest leaving out interaction effects. 
+
 ```{r}
-lm_analysis = function(var_name, fit_big_lm = FALSE){
+lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE){
   lm_super_tbl = super_tbl %>%
   mutate(ECM1 = as.factor(ECM1) %>% 
            relevel(ref = "COL1_go0005584")) %>%
   mutate(Ligand1 = as.factor(Ligand1) %>% 
-           relevel(ref = "FBS_pubchemsid56314508"))
+           relevel(ref = "FBS_pubchemsid56314508")) %>%
+    filter(!is.na(.[[var_name]]))
 
   # 13.5 minutes
   if(fit_big_lm){
-    area_treatment_lm = aov(
-      lm_super_tbl[[var_name]] ~ ECM1*Ligand1+stain_num,
-      data = lm_super_tbl
-    )
+    if(length(unique(lm_super_tbl$stain_num)) == 1){
+      area_treatment_lm = aov(
+        lm_super_tbl[[var_name]] ~ ECM1*Ligand1,
+        data = lm_super_tbl
+      )
+    } else {
+      area_treatment_lm = aov(
+        lm_super_tbl[[var_name]] ~ ECM1*Ligand1+stain_num,
+        data = lm_super_tbl
+      )
+    }
+    
     print(summary(area_treatment_lm))
     cat("AIC: ", AIC(area_treatment_lm), "\n")
   }
   
-  simple_area_treatment_lm = aov(
-    lm_super_tbl[[var_name]] ~ ECM1+Ligand1+stain_num,
-    data = lm_super_tbl
-  )
+  if(length(unique(lm_super_tbl$stain_num))){
+    simple_area_treatment_lm = aov(
+      lm_super_tbl[[var_name]] ~ ECM1+Ligand1,
+      data = lm_super_tbl
+    )
+  } else {
+    simple_area_treatment_lm = aov(
+      lm_super_tbl[[var_name]] ~ ECM1+Ligand1+stain_num,
+      data = lm_super_tbl
+    )
+  }
+  
   print(summary(simple_area_treatment_lm))
   cat("AIC: ", AIC(simple_area_treatment_lm), "\n")
   
@@ -593,22 +616,32 @@ lm_analysis = function(var_name, fit_big_lm = FALSE){
         mutate(Treatment = fct_reorder(factor(Treatment), Value)),
     aes(x = Value, y = Treatment, fill = Positive)) +
     geom_col() + 
-    theme(legend.position = "none"))
+    theme(legend.position = "none")) +
+    labs(title = paste0("Estimated effect of ECMP on ", var_name))
     
   print(ggplot(simple_coefficients_tbl %>% 
         filter(Type == "Ligand1") %>%
         mutate(Treatment = fct_reorder(factor(Treatment), Value)),
     aes(x = Value, y = Treatment, fill = Positive)) +
     geom_col() + 
-    theme(legend.position = "none"))
+    theme(legend.position = "none")) +
+    labs(title = paste0("Estimated effect of ligand on ", var_name))
   
   simple_coefficients_tbl %>%
     filter(Type == "(Intercept)" | Type == "stain_num") %>%
+    select(!Positive) %>%
     print()
 }
 
-lm_analysis("Nuclei_CP_AreaShape_Area", fit_big_lm = TRUE)
+lm_analysis("Nuclei_CP_AreaShape_Area", super_tbl, fit_big_lm = FALSE)
+lm_analysis("Spot_PA_SpotCellCount", super_tbl, fit_big_lm = FALSE)
+
 ```
+
+
+
+
+
 
 
 
