@@ -26,6 +26,13 @@ tbls <- as.list.environment(.GlobalEnv, sorted = TRUE)
 map_stain_num = function(y){
   sapply(y, function(x) switch(x, 3, 1, 2))
 }
+
+for(i in seq_along(tbls)){
+  tbls[[i]] = tbls[[i]] %>%
+    mutate(stain_num = as.character(map_stain_num(floor((i-1/2)/8) + 1)))
+}
+
+super_tbl = bind_rows(tbls)
 ```
 
 Position on the plate seems to affect cell count as evidenced by splotches of low or NA (0?) cell count. Might want to account for this somehow.
@@ -474,10 +481,123 @@ stain_set_3 %>%
 ```
 
 
+```{r Big Spearman correlation tibble by LIGAND}
+tic()
+cor_tbl_list = vector(mode = "list", length = length(tbls))
+for(i in seq_along(cor_tbl_list)){
+  tbls_reduced = tbls[[i]] %>%
+    select(!(WellIndex:PinDiameter)) %>%
+    select(Ligand1, where(is.numeric)) %>%
+    select(Ligand1, where(function(x) length(unique(x)) > 8)) %>%
+    select(!PrintSpot & !ImageID & !ClarionID) %>%
+    select(Nuclei_CP_AreaShape_Area | !contains("_AreaShape_")) %>%
+    select(!contains("_90_") & !ends_with("_90")) %>%
+    select(!contains("_SE_") & !ends_with("_SE")) %>%
+    select(!contains("DNA2")) %>%
+    select(!contains("_IntegratedIntensity")) %>%
+    select(Ligand1, everything())
+    
+  cor_list = vector(mode = "list", length = length(unique(tbls_reduced$Ligand1)))
+  names(cor_list) = unique(tbls_reduced$Ligand1)
+  for(j in seq_along(cor_list)){
+    treat_tbl = tbls_reduced %>% 
+      filter(Ligand1 == unique(tbls_reduced$Ligand1)[[j]]) %>%
+      select(!Ligand1) %>%
+      select(where(function(x) length(unique(x)) > 1))
+    if(length(treat_tbl) != 0){
+      cor_test_out = corr.test(treat_tbl, method = "spearman", ci = FALSE,
+                               normal = TRUE)
+      p_mat_simple = cor_test_out[["p"]]
+      p_mat_simple[upper.tri(p_mat_simple)] = 2 # Filters out repeats later
+      p_tbl = p_mat_simple %>%
+        as.data.frame() %>%
+        rownames_to_column(var = "row_var") %>%
+        pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
+        rename(p_val = value)
+      cor_list[[j]] = cor_test_out[["r"]] %>%
+        as.data.frame() %>%
+        rownames_to_column(var = "row_var") %>%
+        pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
+        rename(spear_cor = value) %>%
+        left_join(p_tbl, by = c("row_var", "col_var")) %>%
+        filter(p_val <= 1, row_var != col_var) %>%
+        mutate(Ligand1 = names(cor_list)[[j]], table_num = i) %>%
+        select(table_num, Ligand1, everything()) %>%
+        mutate(n = cor_test_out[["n"]])
+    }
+  }
+  cor_tbl_list[[i]] = bind_rows(cor_list)
+}
+ligand_big_cor_tbl = bind_rows(cor_tbl_list) %>%
+  mutate(stain_num = map_stain_num(floor((table_num-1/2)/8) + 1)) %>%
+  select(stain_num, everything()) %>%
+  arrange(p_val) %>%
+  filter(n >= 10) %>%
+  mutate(row_num = 1:nrow(.)) %>%
+  mutate(pass_holm = p_val <= 0.01/(length(row_num) - row_num + 1)) %>%
+  select(!row_num) %>%
+  unite(col = "relation", row_var, col_var, sep = ":", remove = FALSE) %>%
+  mutate(rel = paste0(abbreviate(row_var),":",abbreviate(col_var)))
+  
+ligand_small_big_cor_tbl = ligand_big_cor_tbl %>%
+  filter(pass_holm == TRUE) %>%
+  select(!pass_holm)
+# I don't think the p-values equalling 0 are correct but this shouldn't matter
+# p-value obtained from t-test
+# Could get better p-values using better test but could take a long time
+# write_tsv(small_big_cor_tbl, "small_big_cor_tbl.tsv")  
+toc()
+# 9 seconds to run
+```
 
+Simpler linear model (no interaction effects) has superior AIC. However, F-test suggests keeping interaction effects. For simplicity, I suggest leaving out interaction effects. 
 
+Intercept is stain set 1, COL1 for ECM1, and FBS for Ligand1.
 
+```{r}
+lm_super_tbl = super_tbl %>%
+  mutate(ECM1 = as.factor(ECM1) %>% 
+           relevel(ref = "COL1_go0005584")) %>%
+  mutate(Ligand1 = as.factor(Ligand1) %>% 
+           relevel(ref = "FBS_pubchemsid56314508"))
 
+tic()
+area_treatment_lm = aov(
+  Nuclei_CP_AreaShape_Area ~ ECM1*Ligand1+stain_num,
+  data = lm_super_tbl
+)
+toc()
+# 13.5 minutes
+summary(area_treatment_lm)
+AIC(area_treatment_lm)
+simple_area_treatment_lm = aov(
+  Nuclei_CP_AreaShape_Area ~ ECM1+Ligand1+stain_num,
+  data = lm_super_tbl
+)
+summary(simple_area_treatment_lm)
+AIC(simple_area_treatment_lm)
+
+simple_coefficients_tbl = tibble(
+  coefficient = names(simple_area_treatment_lm$coefficients),
+  Value = simple_area_treatment_lm$coefficients
+) %>%
+  extract(col = coefficient, 
+           into = c("Type", "Treatment"),
+           regex = "(Ligand1|ECM1|stain_num|\\(Intercept\\))(.*)")
+
+ggplot(simple_coefficients_tbl %>% 
+    filter(Type == "ECM1"),
+  aes(x = Value, y = Treatment)) +
+  geom_col()
+  
+ggplot(simple_coefficients_tbl %>% 
+    filter(Type == "Ligand1"),
+  aes(x = Value, y = Treatment)) +
+  geom_col()
+
+simple_coefficients_tbl %>%
+  filter(Type == "(Intercept)" | Type == "stain_num")
+```
 
 
 
