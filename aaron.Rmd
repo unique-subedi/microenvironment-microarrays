@@ -555,53 +555,59 @@ Simpler linear model (no interaction effects) has superior AIC. However, F-test 
 Intercept is stain set 1, COL1 for ECM1, and FBS for Ligand1.
 
 ```{r}
-lm_super_tbl = super_tbl %>%
+lm_analysis = function(var_name, fit_big_lm = FALSE){
+  lm_super_tbl = super_tbl %>%
   mutate(ECM1 = as.factor(ECM1) %>% 
            relevel(ref = "COL1_go0005584")) %>%
   mutate(Ligand1 = as.factor(Ligand1) %>% 
            relevel(ref = "FBS_pubchemsid56314508"))
 
-tic()
-area_treatment_lm = aov(
-  Nuclei_CP_AreaShape_Area ~ ECM1*Ligand1+stain_num,
-  data = lm_super_tbl
-)
-toc()
-# 13.5 minutes
-summary(area_treatment_lm)
-AIC(area_treatment_lm)
-simple_area_treatment_lm = aov(
-  Nuclei_CP_AreaShape_Area ~ ECM1+Ligand1+stain_num,
-  data = lm_super_tbl
-)
-summary(simple_area_treatment_lm)
-AIC(simple_area_treatment_lm)
-
-simple_coefficients_tbl = tibble(
-  coefficient = names(simple_area_treatment_lm$coefficients),
-  Value = simple_area_treatment_lm$coefficients
-) %>%
-  extract(col = coefficient, 
-           into = c("Type", "Treatment"),
-           regex = "(Ligand1|ECM1|stain_num|\\(Intercept\\))(.*)") %>%
-  mutate(Positive = Value > 0)
-
-ggplot(simple_coefficients_tbl %>% 
-      filter(Type == "ECM1") %>%
-      mutate(Treatment = fct_reorder(factor(Treatment), Value)),
-  aes(x = Value, y = Treatment, fill = Positive)) +
-  geom_col() + 
-  theme(legend.position = "none")
+  # 13.5 minutes
+  if(fit_big_lm){
+    area_treatment_lm = aov(
+      lm_super_tbl[[var_name]] ~ ECM1*Ligand1+stain_num,
+      data = lm_super_tbl
+    )
+    print(summary(area_treatment_lm))
+    cat("AIC: ", AIC(area_treatment_lm), "\n")
+  }
   
-ggplot(simple_coefficients_tbl %>% 
-      filter(Type == "Ligand1") %>%
-      mutate(Treatment = fct_reorder(factor(Treatment), Value)),
-  aes(x = Value, y = Treatment, fill = Positive)) +
-  geom_col() + 
-  theme(legend.position = "none")
+  simple_area_treatment_lm = aov(
+    lm_super_tbl[[var_name]] ~ ECM1+Ligand1+stain_num,
+    data = lm_super_tbl
+  )
+  print(summary(simple_area_treatment_lm))
+  cat("AIC: ", AIC(simple_area_treatment_lm), "\n")
+  
+  simple_coefficients_tbl = tibble(
+    coefficient = names(simple_area_treatment_lm$coefficients),
+    Value = simple_area_treatment_lm$coefficients
+  ) %>%
+    extract(col = coefficient, 
+             into = c("Type", "Treatment"),
+             regex = "(Ligand1|ECM1|stain_num|\\(Intercept\\))(.*)") %>%
+    mutate(Positive = Value > 0)
+  
+  print(ggplot(simple_coefficients_tbl %>% 
+        filter(Type == "ECM1") %>%
+        mutate(Treatment = fct_reorder(factor(Treatment), Value)),
+    aes(x = Value, y = Treatment, fill = Positive)) +
+    geom_col() + 
+    theme(legend.position = "none"))
+    
+  print(ggplot(simple_coefficients_tbl %>% 
+        filter(Type == "Ligand1") %>%
+        mutate(Treatment = fct_reorder(factor(Treatment), Value)),
+    aes(x = Value, y = Treatment, fill = Positive)) +
+    geom_col() + 
+    theme(legend.position = "none"))
+  
+  simple_coefficients_tbl %>%
+    filter(Type == "(Intercept)" | Type == "stain_num") %>%
+    print()
+}
 
-simple_coefficients_tbl %>%
-  filter(Type == "(Intercept)" | Type == "stain_num")
+lm_analysis("Nuclei_CP_AreaShape_Area", fit_big_lm = TRUE)
 ```
 
 
