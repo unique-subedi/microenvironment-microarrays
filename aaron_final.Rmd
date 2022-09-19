@@ -288,7 +288,8 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE,
     }
     if(print_aov_summary){
       print(summary(area_treatment_lm))
-      cat("AIC: ", AIC(area_treatment_lm), "\n")
+      cat("AIC: ", AIC(area_treatment_lm), 
+          "; Adjusted R^2: ", summary.lm(area_treatment_lm)$adj.r.squared, "\n")
     }
   }
   
@@ -305,7 +306,9 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE,
   }
   if(print_aov_summary){
     print(summary(simple_area_treatment_lm))
-    cat("AIC: ", AIC(simple_area_treatment_lm), "\n")  
+    cat("AIC: ", AIC(simple_area_treatment_lm), 
+        "; Adjusted R^2: ", summary.lm(simple_area_treatment_lm)$adj.r.squared,
+        "\n")  
   }
   
   simple_coefficients_tbl = tibble(
@@ -364,6 +367,58 @@ for(independent_var in vars_of_note){
   lm_analysis(independent_var, super_tbl, fit_big_lm = FALSE, 
               print_aov_summary = FALSE)
 }
+```
+
+```{r Make adj R^2 tibble, eval = FALSE}
+adj_r_sq_list = vector(mode = "list", length = ncol(lm_super_tbl_2_num))
+for(i in seq_along(adj_r_sq_list)){
+  var_name = colnames(lm_super_tbl_2_num)[[i]]
+  lm_super_tbl_2 = super_tbl %>%
+  mutate(ECM1 = as.factor(ECM1) %>% 
+           relevel(ref = "COL1_go0005584")) %>%
+  mutate(Ligand1 = as.factor(Ligand1) %>% 
+           relevel(ref = "FBS_pubchemsid56314508")) %>%
+    select(!(WellIndex:PinDiameter)) %>%
+    select(where(is.numeric) | where(is.factor) | stain_num) %>%
+    select(!PrintSpot & !ImageID & !ClarionID) %>%
+    filter(!is.na(.[[var_name]]))
+  lm_super_tbl_2_num = lm_super_tbl_2 %>% 
+    select(where(is.numeric))
+  if(length(unique(lm_super_tbl_2$stain_num)) == 1){
+    adj_r_sq_list[[i]] = tibble(
+      Variable = var_name,
+      simple_adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ 1, 
+                       data = lm_super_tbl_2) %>% 
+                       summary() %>% 
+                       .[["adj.r.squared"]],
+      adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ ECM1 + Ligand1 + 1, 
+                       data = lm_super_tbl_2) %>% 
+                       summary() %>% 
+                       .[["adj.r.squared"]]
+    )
+  } else {
+    adj_r_sq_list[[i]] = tibble(
+      Variable = var_name,
+      simple_adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ stain_num, 
+                       data = lm_super_tbl_2) %>% 
+                       summary() %>% 
+                       .[["adj.r.squared"]],
+      adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ ECM1 + Ligand1 + stain_num, 
+                       data = lm_super_tbl_2) %>% 
+                       summary() %>% 
+                       .[["adj.r.squared"]]
+    )
+  }
+
+}
+adj_r_sq_tibble = bind_rows(adj_r_sq_list) %>%
+  mutate(Difference = adj_r_sq - simple_adj_r_sq)
+
+# save(adj_r_sq_tibble, file = "adj_r_sq_tibble.rda")
+```
+
+```{r Load R^2 tibble to save time}
+load("badj_r_sq_tibble.rda")
 ```
 
 
