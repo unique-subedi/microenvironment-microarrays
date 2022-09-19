@@ -14,6 +14,7 @@ library(psych)
 library(tictoc)
 library(gridExtra)
 library(knitr)
+library(cowplot)
 ```
 
 ```{r read_data, cache=TRUE, echo=FALSE, message=FALSE}
@@ -326,25 +327,31 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE,
     kable() %>%
     print()
   
-  print(ggplot(simple_coefficients_tbl %>% 
+  gg1 = ggplot(simple_coefficients_tbl %>% 
         filter(Type == "ECM1") %>%
         mutate(Treatment = fct_reorder(factor(Treatment), Value)),
     aes(x = Value, y = Treatment, fill = Positive)) +
     geom_col() + 
-    theme(legend.position = "none", axis.text.y = element_text(size=5)) +
-    labs(title = paste0("Estimated effect of ECMP on ", var_name)) + 
+    theme(legend.position = "none", axis.text.y = element_text(size=5),
+          plot.title = element_text(size = 10),
+          axis.title = element_text(size = 10)) + 
     ylab("ECMP") + 
-    xlab("Estimated coefficient"))
+    xlab("Estimated coefficient")
     
-  print(ggplot(simple_coefficients_tbl %>% 
+  gg2 = ggplot(simple_coefficients_tbl %>% 
         filter(Type == "Ligand1") %>%
         mutate(Treatment = fct_reorder(factor(Treatment), Value)),
     aes(x = Value, y = Treatment, fill = Positive)) +
     geom_col() + 
-    theme(legend.position = "none", axis.text.y = element_text(size=5)) +
-    labs(title = paste0("Estimated effect of ligand on ", var_name)) + 
+    theme(legend.position = "none", axis.text.y = element_text(size=5),
+          plot.title = element_text(size = 10), 
+          axis.title = element_text(size = 10)) + 
     ylab("Ligand") + 
-    xlab("Estimated coefficient"))
+    xlab("Estimated coefficient")
+  gg_grid = plot_grid(gg1, gg2)
+  gg_title = ggdraw() + 
+    draw_label(paste0("Estimated effect of treatment on ", var_name))
+  print(plot_grid(gg_title, gg_grid, ncol=1, rel_heights=c(0.1, 1)))
 }
 
 lm_analysis("Nuclei_CP_AreaShape_Area", super_tbl, fit_big_lm = FALSE)
@@ -386,7 +393,7 @@ for(i in seq_along(adj_r_sq_list)){
     select(where(is.numeric))
   if(length(unique(lm_super_tbl_2$stain_num)) == 1){
     adj_r_sq_list[[i]] = tibble(
-      Variable = var_name,
+      `Independent Variable` = var_name,
       simple_adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ 1, 
                        data = lm_super_tbl_2) %>% 
                        summary() %>% 
@@ -398,7 +405,7 @@ for(i in seq_along(adj_r_sq_list)){
     )
   } else {
     adj_r_sq_list[[i]] = tibble(
-      Variable = var_name,
+      `Independent Variable` = var_name,
       simple_adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ stain_num, 
                        data = lm_super_tbl_2) %>% 
                        summary() %>% 
@@ -412,13 +419,26 @@ for(i in seq_along(adj_r_sq_list)){
 
 }
 adj_r_sq_tibble = bind_rows(adj_r_sq_list) %>%
-  mutate(Difference = adj_r_sq - simple_adj_r_sq)
+  mutate(Difference = adj_r_sq - simple_adj_r_sq) %>%
+  filter(!is.na(Difference)) %>%
+  arrange(desc(Difference)) %>%
+  rename(`Adj R^2 (simple model)` = simple_adj_r_sq,
+         `Adj R^2` = adj_r_sq)
 
 # save(adj_r_sq_tibble, file = "adj_r_sq_tibble.rda")
 ```
 
 ```{r Load R^2 tibble to save time}
-load("badj_r_sq_tibble.rda")
+load("adj_r_sq_tibble.rda")
+
+adj_r_sq_tibble %>%
+  filter(`Adj R^2 (simple model)` != 0) %>%
+  kable()
+
+adj_r_sq_tibble %>%
+  filter(`Adj R^2 (simple model)` == 0) %>%
+  select(`Independent Variable`, `Adj R^2`) %>%
+  kable()
 ```
 
 
