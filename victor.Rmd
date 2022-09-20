@@ -464,7 +464,7 @@ make_first_2_pcs_loadings_plot <- function(pca_results, pattern = ".*", title) {
 make_pca_results_plot <- function(pca_results, pattern = ".*", title) {
   panel1 <- make_prop_var_explained_plot(pca_results, title = NULL)
   panel2 <- make_first_pc_loadings_plot(pca_results, title = NULL)
-  panel3 <- make_first_2_pcs_loadings_plot(pca_results, ".*", title = NULL)
+  panel3 <- make_first_2_pcs_loadings_plot(pca_results, pattern, title = NULL)
   arrangeGrob(panel1, panel2, panel3, nrow = 1, top = title)
 }
 ```
@@ -536,7 +536,7 @@ Looking only at the AreaShape variables, fewer than ten PCs account for over 95\
 pattern <- "AreaShape"
 all_data2 %>%
   mutate(
-    pca_results = map(data, run_pca),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
       ~ str_interp(
@@ -544,7 +544,7 @@ all_data2 %>%
       )
     ),
     pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = ".*"
+      pca_results, title, make_pca_results_plot, pattern = pattern
     )
   ) %>%
   with(walk(pca_results_plot, grid.arrange))
@@ -555,7 +555,7 @@ We next consider the Intensity variables. For staining sets 1 and 2, around five
 pattern <- "Intensity"
 all_data2 %>%
   mutate(
-    pca_results = map(data, run_pca),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
       ~ str_interp(
@@ -563,7 +563,7 @@ all_data2 %>%
       )
     ),
     pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = ".*"
+      pca_results, title, make_pca_results_plot, pattern = pattern
     )
   ) %>%
   with(walk(pca_results_plot, grid.arrange))
@@ -574,7 +574,7 @@ For the Cycle variables, for each staining set, the top two PCs account for all 
 pattern <- "Cycle"
 all_data2 %>%
   mutate(
-    pca_results = map(data, run_pca),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
       ~ str_interp(
@@ -582,7 +582,7 @@ all_data2 %>%
       )
     ),
     pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = ".*"
+      pca_results, title, make_pca_results_plot, pattern = pattern
     )
   ) %>%
   with(walk(pca_results_plot, grid.arrange))
@@ -594,7 +594,7 @@ pattern <- "Gated"
 all_data2 %>%
   filter(ss_num != 1) %>%
   mutate(
-    pca_results = map(data, run_pca),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
       ~ str_interp(
@@ -602,7 +602,7 @@ all_data2 %>%
       )
     ),
     pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = ".*"
+      pca_results, title, make_pca_results_plot, pattern = pattern
     )
   ) %>%
   with(walk(pca_results_plot, grid.arrange))
@@ -614,7 +614,7 @@ pattern <- "Texture"
 all_data2 %>%
   filter(ss_num == 2) %>%
   mutate(
-    pca_results = map(data, run_pca),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
       ~ str_interp(
@@ -622,7 +622,7 @@ all_data2 %>%
       )
     ),
     pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = ".*"
+      pca_results, title, make_pca_results_plot, pattern = pattern
     )
   ) %>%
   with(walk(pca_results_plot, grid.arrange))
@@ -645,9 +645,9 @@ Looking at the Cells variables, for staining set 1, the first seven PCs account 
 ```{r cells_pca}
 pattern <- "Cells"
 all_data2 %>%
-  filter(ss_num == 2) %>%
+  filter(ss_num != 2) %>%
   mutate(
-    pca_results = map(data, run_pca),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
       ~ str_interp(
@@ -655,7 +655,7 @@ all_data2 %>%
       )
     ),
     pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = ".*"
+      pca_results, title, make_pca_results_plot, pattern = pattern
     )
   ) %>%
   with(walk(pca_results_plot, grid.arrange))
@@ -667,7 +667,7 @@ pattern <- "Cytoplasm"
 all_data2 %>%
   filter(ss_num != 2) %>%
   mutate(
-    pca_results = map(data, run_pca),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
       ~ str_interp(
@@ -675,7 +675,7 @@ all_data2 %>%
       )
     ),
     pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = ".*"
+      pca_results, title, make_pca_results_plot, pattern = pattern
     )
   ) %>%
   with(walk(pca_results_plot, grid.arrange))
@@ -686,7 +686,7 @@ Looking at the Nuclei variables, for staining set 1, the first seven PCs account
 pattern <- "Nuclei"
 all_data2 %>%
   mutate(
-    pca_results = map(data, run_pca),
+    pca_results = map(data, run_pca, pattern = pattern),
     title = map_chr(
       ss_num,
       ~ str_interp(
@@ -694,7 +694,7 @@ all_data2 %>%
       )
     ),
     pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = ".*"
+      pca_results, title, make_pca_results_plot, pattern = pattern
     )
   ) %>%
   with(walk(pca_results_plot, grid.arrange))
