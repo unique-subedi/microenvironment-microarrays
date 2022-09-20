@@ -495,22 +495,6 @@ all_data2 %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
-```{r pca_by_plate, eval=FALSE, include=FALSE}
-all_data %>%
-  nest(data = !c(ss_num, plate_num)) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = "AreaShape"),
-    title = map2_chr(
-      ss_num, plate_num,
-      ~ str_interp("AreaShape PCA for Plate ${.y} of Staining Set ${.x}")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    )
-  ) %>%
-  with(walk(prop_var_explained_plot, print))
-```
-
 Define a function that counts non-trivial numeric columns whose names match a pattern.
 ```{r count_cols}
 count_cols <- function(data, pattern) {
