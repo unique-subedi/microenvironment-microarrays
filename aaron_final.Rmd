@@ -49,9 +49,7 @@ and of the more complicated form
 \begin{align*}
   y_{ijkl} = \alpha_i + \beta_j + \theta_{ij} + \gamma_k + \epsilon_{ijkl}. \tag{2}
 \end{align*}
-where $y_{ijkl}$ is the measurement of a given variable for the $l$th replicate of a group of cells in staining set $k$ treated with ECMp $i$ and ligand $j$. 
-
-For dependent variables which were measured in only one staining set, stain\_num was dropped from the formula. 
+where $y_{ijkl}$ is the measurement of a given variable for the $l$th replicate of a group of cells in staining set $k$ treated with ECMp $i$ and ligand $j$. The $\epsilon_{ijkl}$ are i.i.d. and follow a normal distribution with mean 0. 
 
 The intercept estimates the average value of the dependent variable measured for cells in staining set 1 treated with COL1 and FBS. Note that this treatment uses the control ECMp and control ligand, which makes it a natural baseline for comparison. 
 
@@ -150,11 +148,7 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE,
                size = 9)
   print(plot_grid(gg_title, gg_grid, ncol=1, rel_heights=c(0.1, 1)))
 }
-# simple_coefficients_tbl %>%
-#     filter(Type == "(Intercept)" | Type == "stain_num") %>%
-#     select(!Positive) %>%
-#     kable(format = "rst") %>%
-#     print()
+
 ```
 
 ## Nuclei_CP_AreaShape_Area
