@@ -53,6 +53,8 @@ where $y_{ijkl}$ is the measurement of a given variable for the $l$th replicate 
 
 The intercept estimates the average value of the dependent variable measured for cells in staining set 1 treated with COL1 and FBS. Note that this treatment uses the control ECMp and control ligand, which makes it a natural baseline for comparison. 
 
+The plots and tables of estimates which follow are for model $(1)$.
+
 ## Nuclei_CP_AreaShape_Area model
 
 We'd like to determine whether the ECMp-ligand interactions are worth keeping in the model. The unimportance of such interactions may suggest that further analysis can ignore interactions. 
