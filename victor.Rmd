@@ -450,7 +450,7 @@ make_first_2_pcs_loadings_plot_pattern <- function(pca_results,
       title = title
     ) +
     theme_bw() +
-    theme(plot.title = element_text(hjust = 0.5))
+    theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
 }
 
 make_first_2_pcs_loadings_plot <- function(pca_results, pattern = ".*", title) {
@@ -465,7 +465,18 @@ make_pca_results_plot <- function(pca_results, pattern = ".*", title) {
   panel1 <- make_prop_var_explained_plot(pca_results, title = NULL)
   panel2 <- make_first_pc_loadings_plot(pca_results, title = NULL)
   panel3 <- make_first_2_pcs_loadings_plot(pca_results, pattern, title = NULL)
-  arrangeGrob(panel1, panel2, panel3, nrow = 1, top = title)
+  
+  legend <- get_legend(panel3)
+  if (is.null(legend)) {
+    return(arrangeGrob(panel1, panel2, panel3, nrow = 1, top = title))
+  }
+  panel3 <- panel3 + theme(legend.position = "none")
+  plot_grid(
+    arrangeGrob(panel1, panel2, panel3, nrow = 1, top = title),
+    legend,
+    ncol = 1,
+    rel_heights = c(9, 1)
+  )
 }
 ```
 
