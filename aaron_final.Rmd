@@ -39,234 +39,33 @@ for(i in seq_along(tbls)){
 super_tbl = bind_rows(tbls)
 ```
 
-```{r Big Spearman correlation tibble, eval = FALSE}
-tic()
-cor_tbl_list = vector(mode = "list", length = length(tbls))
-for(i in seq_along(cor_tbl_list)){
-  tbls2 = tbls[[i]] %>%
-  unite(ECM1, Ligand1, col = "treatment", sep = ":")
-  treatments = tbls2[["treatment"]]
-  
-  tbls_reduced = tbls[[i]] %>%
-    select(!(WellIndex:PinDiameter)) %>%
-    select(where(is.numeric)) %>%
-    select(where(function(x) length(unique(x)) > 8)) %>%
-    mutate(treatment = treatments) %>%
-    select(treatment, everything()) %>%
-    select(!PrintSpot & !ImageID & !ClarionID) %>%
-    select(Nuclei_CP_AreaShape_Area | !contains("_AreaShape_")) %>%
-    select(!contains("_90_") & !ends_with("_90")) %>%
-    select(!contains("_SE_") & !ends_with("_SE")) %>%
-    select(!contains("DNA2")) %>%
-    select(!contains("_IntegratedIntensity"))
-    
-  cor_list = vector(mode = "list", length = length(unique(treatments)))
-  names(cor_list) = unique(treatments)
-  for(j in seq_along(cor_list)){
-    treat_tbl = tbls_reduced %>% 
-      filter(treatment == unique(treatments)[[j]]) %>%
-      select(!treatment) %>%
-      select(where(function(x) length(unique(x)) > 1))
-    if(length(treat_tbl) != 0){
-      cor_test_out = corr.test(treat_tbl, method = "spearman", ci = FALSE,
-                               normal = TRUE)
-      p_mat_simple = cor_test_out[["p"]]
-      p_mat_simple[upper.tri(p_mat_simple)] = 2 # Filters out repeats later
-      p_tbl = p_mat_simple %>%
-        as.data.frame() %>%
-        rownames_to_column(var = "row_var") %>%
-        pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
-        rename(p_val = value)
-      cor_list[[j]] = cor_test_out[["r"]] %>%
-        as.data.frame() %>%
-        rownames_to_column(var = "row_var") %>%
-        pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
-        rename(spear_cor = value) %>%
-        left_join(p_tbl, by = c("row_var", "col_var")) %>%
-        filter(p_val <= 1, row_var != col_var) %>%
-        mutate(treatment = names(cor_list)[[j]], table_num = i) %>%
-        select(table_num, treatment, everything()) %>%
-        separate(treatment, into = c("ECM1", "Ligand1"), sep = ":", 
-                 remove = FALSE) %>%
-        mutate(n = cor_test_out[["n"]])
-    }
-  }
-  cor_tbl_list[[i]] = bind_rows(cor_list)
-}
-big_cor_tbl = bind_rows(cor_tbl_list) %>%
-  mutate(stain_num = floor((table_num-1/2)/8) + 1) %>%
-  select(stain_num, everything()) %>%
-  arrange(p_val) %>%
-  filter(n >= 10) %>%
-  mutate(row_num = 1:nrow(.)) %>%
-  mutate(pass_holm = p_val <= 0.01/(length(row_num) - row_num + 1)) %>%
-  select(!row_num) %>%
-  unite(col = "relation", row_var, col_var, sep = ":", remove = FALSE) %>%
-  mutate(treat = paste0(abbreviate(ECM1),":",abbreviate(Ligand1))) %>%  
-  mutate(rel = paste0(abbreviate(row_var),":",abbreviate(col_var))) %>%
-  mutate(stain_num = map_stain_num(stain_num))
-  
-small_big_cor_tbl = big_cor_tbl %>%
-  filter(pass_holm == TRUE) %>%
-  select(!pass_holm)
-# I don't think the p-values equalling 0 are correct but this shouldn't matter
-# p-value obtained from t-test
-# Could get better p-values using better test but could take a long time
-# write_tsv(small_big_cor_tbl, "small_big_cor_tbl.tsv")  
-toc()
-# 4 minutes to run
-```
+# Linear Model Fit
 
-```{r Load tibbles to save time}
-load("big_cor_tbl.rda")
-load("small_big_cor_tbl.rda")
-```
+We fit linear models of the form 
+\begin{align*}
+  y_{ijkl} = \alpha_i + \beta_j + \gamma_k + \epsilon_{ijkl} \tag{1}
+\end{align*}
+and of the more complicated form
+\begin{align*}
+  y_{ijkl} = \alpha_i + \beta_j + \theta_{ij} + \gamma_k + \epsilon_{ijkl}. \tag{2}
+\end{align*}
+where $y_{ijkl}$ is the measurement of a given variable for the $l$th replicate of a group of cells in staining set $k$ treated with ECMp $i$ and ligand $j$. The $\epsilon_{ijkl}$ are i.i.d. and follow a normal distribution with mean 0. 
 
+The intercept estimates the average value of the dependent variable measured for cells in staining set 1 treated with COL1 and FBS. Note that this treatment uses the control ECMp and control ligand, which makes it a natural baseline for comparison. 
 
-```{r Frequency of treatments in significant set}
-# Doesn't seem interesting
-small_big_cor_tbl %>% 
-  filter(spear_cor == 1) %>% 
-  unite(col = "treat_stain", stain_num, treatment, sep = ":") %>%
-  .[["treat_stain"]] %>% 
-  table() %>% 
-  sort(decreasing = TRUE) -> pos_sig_treat_count
-table(pos_sig_treat_count)
-pos_sig_treat_count[1:20]
-  
-small_big_cor_tbl %>% 
-  filter(spear_cor == -1) %>% 
-  unite(col = "treat_stain", stain_num, treatment, sep = ":") %>%
-  .[["treat_stain"]] %>% 
-  table() %>% 
-  sort(decreasing = TRUE) -> neg_sig_treat_count
-table(neg_sig_treat_count)
-neg_sig_treat_count[1:20]
-```
+The plots and tables of estimates which follow are for model $(1)$.
 
+## Nuclei_CP_AreaShape_Area model
+
+We'd like to determine whether the ECMp-ligand interactions are worth keeping in the model. The unimportance of such interactions may suggest that further analysis can ignore interactions. 
+
+Based on the following output, model $(1)$ has superior AIC. However, the F-test suggests keeping interaction effects. 
 
 ```{r}
-big_cor_tbl %>% 
-  group_by(relation, stain_num) %>%
-  summarise(cor_vari = var(spear_cor), count = length(spear_cor)) %>%
-  arrange(desc(cor_vari)) -> cor_vari_tbl
-summary(cor_vari_tbl$cor_vari, na.rm = TRUE)
+var_name = "Nuclei_CP_AreaShape_Area"
+fit_big_lm = TRUE 
+print_aov_summary = TRUE
 
-stuff = vector(mode = "list", length = 6)
-for(i in 1:3){
-  cor_vari_tbl %>%
-    filter(stain_num == i) %>%
-    head() -> stuff[[1+2*(i-1)]]
-  
-  cor_vari_tbl %>%
-    filter(stain_num == i) %>%
-    tail() -> stuff[[2*i]]
-}
-(cor_var_summary_tbl = bind_rows(stuff))
-```
-
-
-```{r Big Spearman correlation tibble by LIGAND}
-#tic()
-cor_tbl_list = vector(mode = "list", length = length(tbls))
-for(i in seq_along(cor_tbl_list)){
-  tbls_reduced = tbls[[i]] %>%
-    select(!(WellIndex:PinDiameter)) %>%
-    select(Ligand1, where(is.numeric)) %>%
-    select(Ligand1, where(function(x) length(unique(x)) > 8)) %>%
-    select(!PrintSpot & !ImageID & !ClarionID) %>%
-    select(Nuclei_CP_AreaShape_Area | !contains("_AreaShape_")) %>%
-    select(!contains("_90_") & !ends_with("_90")) %>%
-    select(!contains("_SE_") & !ends_with("_SE")) %>%
-    select(!contains("DNA2")) %>%
-    select(!contains("_IntegratedIntensity")) %>%
-    select(Ligand1, everything())
-    
-  cor_list = vector(mode = "list", length = length(unique(tbls_reduced$Ligand1)))
-  names(cor_list) = unique(tbls_reduced$Ligand1)
-  for(j in seq_along(cor_list)){
-    treat_tbl = tbls_reduced %>% 
-      filter(Ligand1 == unique(tbls_reduced$Ligand1)[[j]]) %>%
-      select(!Ligand1) %>%
-      select(where(function(x) length(unique(x)) > 1))
-    if(length(treat_tbl) != 0){
-      cor_test_out = corr.test(treat_tbl, method = "spearman", ci = FALSE,
-                               normal = TRUE)
-      p_mat_simple = cor_test_out[["p"]]
-      p_mat_simple[upper.tri(p_mat_simple)] = 2 # Filters out repeats later
-      p_tbl = p_mat_simple %>%
-        as.data.frame() %>%
-        rownames_to_column(var = "row_var") %>%
-        pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
-        rename(p_val = value)
-      cor_list[[j]] = cor_test_out[["r"]] %>%
-        as.data.frame() %>%
-        rownames_to_column(var = "row_var") %>%
-        pivot_longer(names_to = "col_var", cols = !matches("row_var")) %>%
-        rename(spear_cor = value) %>%
-        left_join(p_tbl, by = c("row_var", "col_var")) %>%
-        filter(p_val <= 1, row_var != col_var) %>%
-        mutate(Ligand1 = names(cor_list)[[j]], table_num = i) %>%
-        select(table_num, Ligand1, everything()) %>%
-        mutate(n = cor_test_out[["n"]])
-    }
-  }
-  cor_tbl_list[[i]] = bind_rows(cor_list)
-}
-ligand_big_cor_tbl = bind_rows(cor_tbl_list) %>%
-  mutate(stain_num = map_stain_num(floor((table_num-1/2)/8) + 1)) %>%
-  select(stain_num, everything()) %>%
-  arrange(p_val) %>%
-  filter(n >= 10) %>%
-  mutate(row_num = 1:nrow(.)) %>%
-  mutate(pass_holm = p_val <= 0.01/(length(row_num) - row_num + 1)) %>%
-  select(!row_num) %>%
-  unite(col = "relation", row_var, col_var, sep = ":", remove = FALSE) %>%
-  mutate(rel = paste0(abbreviate(row_var),":",abbreviate(col_var)))
-  
-ligand_small_big_cor_tbl = ligand_big_cor_tbl %>%
-  filter(pass_holm == TRUE) %>%
-  select(!pass_holm)
-# I don't think the p-values equalling 0 are correct but this shouldn't matter
-# p-value obtained from t-test
-# Could get better p-values using better test but could take a long time
-# write_tsv(small_big_cor_tbl, "small_big_cor_tbl.tsv")  
-#toc()
-# 9 seconds to run
-```
-
-```{r Variance of stain-ligand-grouped correlations}
-# Don't think that this is helpful
-ligand_big_cor_tbl %>% 
-  group_by(relation, stain_num) %>%
-  summarise(cor_vari = var(spear_cor), count = length(spear_cor)) %>%
-  arrange(desc(cor_vari)) -> cor_vari_tbl
-```
-
-
-# Linear model stuff
-
-We fit linear models of the form
-
-\begin{align*}
-  \text{dependent\_var} \sim \text{Ligand1} + \text{ECM1} + \text{stain\_num}
-\end{align*}
-and, in some cases
-\begin{align*}
-  \text{dependent\_var} \sim \text{Ligand1}*\text{ECM1} + \text{stain\_num}
-\end{align*}
-
-The intercept is stain set 1, COL1 for ECM1, and FBS for Ligand1.
-
-For Nuclei_CP_AreaShape_Area: The Simpler linear model (no interaction effects) has superior AIC. However, the F-test suggests keeping interaction effects. 
-
-For Spot_PA_SpotCellCount: Same results as Nuclei_CP_AreaShape_Area
-
-For simplicity, we suggest leaving out interaction effects. 
-
-```{r}
-lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE, 
-                       print_aov_summary = TRUE){
   lm_super_tbl = super_tbl %>%
   mutate(ECM1 = as.factor(ECM1) %>% 
            relevel(ref = "COL1_go0005584")) %>%
@@ -288,9 +87,11 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE,
       )
     }
     if(print_aov_summary){
+      cat(var_name, " interactions model summary: \n")
       print(summary(area_treatment_lm))
       cat("AIC: ", AIC(area_treatment_lm), 
-          "; Adjusted R^2: ", summary.lm(area_treatment_lm)$adj.r.squared, "\n")
+          "; Adjusted R^2: ", summary.lm(area_treatment_lm)$adj.r.squared,
+          "\n\n")
     }
   }
   
@@ -306,10 +107,11 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE,
     )
   }
   if(print_aov_summary){
+    cat(var_name, " model summary: \n")
     print(summary(simple_area_treatment_lm))
     cat("AIC: ", AIC(simple_area_treatment_lm), 
         "; Adjusted R^2: ", summary.lm(simple_area_treatment_lm)$adj.r.squared,
-        "\n")  
+        "\n\n")  
   }
   
   simple_coefficients_tbl = tibble(
@@ -333,8 +135,9 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE,
     aes(x = Value, y = Treatment, fill = Positive)) +
     geom_col() + 
     theme(legend.position = "none", axis.text.y = element_text(size=5),
+          axis.text.x = element_text(size=6),
           plot.title = element_text(size = 10),
-          axis.title = element_text(size = 10)) + 
+          axis.title = element_text(size = 6)) + 
     ylab("ECMP") + 
     xlab("Estimated coefficient")
     
@@ -344,102 +147,121 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE,
     aes(x = Value, y = Treatment, fill = Positive)) +
     geom_col() + 
     theme(legend.position = "none", axis.text.y = element_text(size=5),
+          axis.text.x = element_text(size=6),
           plot.title = element_text(size = 10), 
-          axis.title = element_text(size = 10)) + 
+          axis.title = element_text(size = 7)) + 
     ylab("Ligand") + 
     xlab("Estimated coefficient")
   gg_grid = plot_grid(gg1, gg2)
   gg_title = ggdraw() + 
-    draw_label(paste0("Estimated effect of treatment on ", var_name))
+    draw_label(paste0("Estimated effect of treatment on ", var_name),
+               size = 9)
   print(plot_grid(gg_title, gg_grid, ncol=1, rel_heights=c(0.1, 1)))
-}
-
-lm_analysis("Nuclei_CP_AreaShape_Area", super_tbl, fit_big_lm = FALSE)
-lm_analysis("Spot_PA_SpotCellCount", super_tbl, fit_big_lm = FALSE)
-
-# simple_coefficients_tbl %>%
-#     filter(Type == "(Intercept)" | Type == "stain_num") %>%
-#     select(!Positive) %>%
-#     kable(format = "rst") %>%
-#     print()
 ```
+
+## Spot_PA_SpotCellCount model
+
+Once again, the simpler linear model has superior AIC while the F-test suggests keeping interaction effects.
 
 ```{r}
-vars_of_note = c(
-  "Cells_CP_Intensity_MedianIntensity_CellMask", 
-  "Cells_CP_Intensity_MedianIntensity_KRT19",
-  "Cells_CP_Intensity_MedianIntensity_KRT5"
-)
-for(independent_var in vars_of_note){
-  lm_analysis(independent_var, super_tbl, fit_big_lm = FALSE, 
-              print_aov_summary = FALSE)
-}
-```
+var_name = "Spot_PA_SpotCellCount"
+fit_big_lm = TRUE 
+print_aov_summary = TRUE
 
-```{r Make adj R^2 tibble, eval = FALSE}
-adj_r_sq_list = vector(mode = "list", length = ncol(lm_super_tbl_2_num))
-for(i in seq_along(adj_r_sq_list)){
-  var_name = colnames(lm_super_tbl_2_num)[[i]]
-  lm_super_tbl_2 = super_tbl %>%
+  lm_super_tbl = super_tbl %>%
   mutate(ECM1 = as.factor(ECM1) %>% 
            relevel(ref = "COL1_go0005584")) %>%
   mutate(Ligand1 = as.factor(Ligand1) %>% 
            relevel(ref = "FBS_pubchemsid56314508")) %>%
-    select(!(WellIndex:PinDiameter)) %>%
-    select(where(is.numeric) | where(is.factor) | stain_num) %>%
-    select(!PrintSpot & !ImageID & !ClarionID) %>%
     filter(!is.na(.[[var_name]]))
-  lm_super_tbl_2_num = lm_super_tbl_2 %>% 
-    select(where(is.numeric))
-  if(length(unique(lm_super_tbl_2$stain_num)) == 1){
-    adj_r_sq_list[[i]] = tibble(
-      `Independent Variable` = var_name,
-      simple_adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ 1, 
-                       data = lm_super_tbl_2) %>% 
-                       summary() %>% 
-                       .[["adj.r.squared"]],
-      adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ ECM1 + Ligand1 + 1, 
-                       data = lm_super_tbl_2) %>% 
-                       summary() %>% 
-                       .[["adj.r.squared"]]
+
+  # ~13.5 minutes
+  if(fit_big_lm){
+    if(length(unique(lm_super_tbl$stain_num)) == 1){
+      area_treatment_lm = aov(
+        lm_super_tbl[[var_name]] ~ ECM1*Ligand1,
+        data = lm_super_tbl
+      )
+    } else {
+      area_treatment_lm = aov(
+        lm_super_tbl[[var_name]] ~ ECM1*Ligand1+stain_num,
+        data = lm_super_tbl
+      )
+    }
+    if(print_aov_summary){
+      cat(var_name, " interactions model summary: \n")
+      print(summary(area_treatment_lm))
+      cat("AIC: ", AIC(area_treatment_lm), 
+          "; Adjusted R^2: ", summary.lm(area_treatment_lm)$adj.r.squared,
+          "\n\n")
+    }
+  }
+  
+  if(length(unique(lm_super_tbl$stain_num)) == 1){
+    simple_area_treatment_lm = aov(
+      lm_super_tbl[[var_name]] ~ ECM1+Ligand1,
+      data = lm_super_tbl
     )
   } else {
-    adj_r_sq_list[[i]] = tibble(
-      `Independent Variable` = var_name,
-      simple_adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ stain_num, 
-                       data = lm_super_tbl_2) %>% 
-                       summary() %>% 
-                       .[["adj.r.squared"]],
-      adj_r_sq = lm(lm_super_tbl_2_num[[i]] ~ ECM1 + Ligand1 + stain_num, 
-                       data = lm_super_tbl_2) %>% 
-                       summary() %>% 
-                       .[["adj.r.squared"]]
+    simple_area_treatment_lm = aov(
+      lm_super_tbl[[var_name]] ~ ECM1+Ligand1+stain_num,
+      data = lm_super_tbl
     )
   }
-
-}
-adj_r_sq_tibble = bind_rows(adj_r_sq_list) %>%
-  mutate(Difference = adj_r_sq - simple_adj_r_sq) %>%
-  filter(!is.na(Difference)) %>%
-  arrange(desc(Difference)) %>%
-  rename(`Adj R^2 (simple model)` = simple_adj_r_sq,
-         `Adj R^2` = adj_r_sq)
-
-# save(adj_r_sq_tibble, file = "adj_r_sq_tibble.rda")
+  if(print_aov_summary){
+    cat(var_name, " model summary: \n")
+    print(summary(simple_area_treatment_lm))
+    cat("AIC: ", AIC(simple_area_treatment_lm), 
+        "; Adjusted R^2: ", summary.lm(simple_area_treatment_lm)$adj.r.squared,
+        "\n\n")  
+  }
+  
+  simple_coefficients_tbl = tibble(
+    coefficient = names(simple_area_treatment_lm$coefficients),
+    Value = simple_area_treatment_lm$coefficients
+  ) %>%
+    extract(col = coefficient, 
+             into = c("Type", "Treatment"),
+             regex = "(Ligand1|ECM1|stain_num|\\(Intercept\\))(.*)") %>%
+    mutate(Positive = Value > 0)
+  
+  simple_coefficients_tbl %>%
+    filter(Type == "(Intercept)" | Type == "stain_num") %>%
+    select(!Positive) %>%
+    kable() %>%
+    print()
+  
+  gg1 = ggplot(simple_coefficients_tbl %>% 
+        filter(Type == "ECM1") %>%
+        mutate(Treatment = fct_reorder(factor(Treatment), Value)),
+    aes(x = Value, y = Treatment, fill = Positive)) +
+    geom_col() + 
+    theme(legend.position = "none", axis.text.y = element_text(size=5),
+          axis.text.x = element_text(size=6),
+          plot.title = element_text(size = 10),
+          axis.title = element_text(size = 6)) + 
+    ylab("ECMP") + 
+    xlab("Estimated coefficient")
+    
+  gg2 = ggplot(simple_coefficients_tbl %>% 
+        filter(Type == "Ligand1") %>%
+        mutate(Treatment = fct_reorder(factor(Treatment), Value)),
+    aes(x = Value, y = Treatment, fill = Positive)) +
+    geom_col() + 
+    theme(legend.position = "none", axis.text.y = element_text(size=5),
+          axis.text.x = element_text(size=6),
+          plot.title = element_text(size = 10), 
+          axis.title = element_text(size = 7)) + 
+    ylab("Ligand") + 
+    xlab("Estimated coefficient")
+  gg_grid = plot_grid(gg1, gg2)
+  gg_title = ggdraw() + 
+    draw_label(paste0("Estimated effect of treatment on ", var_name),
+               size = 9)
+  print(plot_grid(gg_title, gg_grid, ncol=1, rel_heights=c(0.1, 1)))
 ```
 
-```{r Load R^2 tibble to save time}
-load("adj_r_sq_tibble.rda")
 
-adj_r_sq_tibble %>%
-  filter(`Adj R^2 (simple model)` != 0) %>%
-  kable()
-
-adj_r_sq_tibble %>%
-  filter(`Adj R^2 (simple model)` == 0) %>%
-  select(`Independent Variable`, `Adj R^2`) %>%
-  kable()
-```
 
 
 
