@@ -39,7 +39,7 @@ for(i in seq_along(tbls)){
 super_tbl = bind_rows(tbls)
 ```
 
-# Analysis of Variance
+# Linear Model Fit
 
 We fit linear models of the form 
 \begin{align*}
