@@ -43,12 +43,14 @@ super_tbl = bind_rows(tbls)
 
 We fit linear models of the form 
 \begin{align*}
-  \text{dependent\_var} \sim \text{Ligand1} + \text{ECM1} + \text{stain\_num} \tag{1}
+  y_{ijkl} = \alpha_i + \beta_j + \gamma_k + \epsilon_{ijkl} \tag{1}
 \end{align*}
 and of the more complicated form
 \begin{align*}
-  \text{dependent\_var} \sim \text{Ligand1}*\text{ECM1} + \text{stain\_num}. \tag{2}
+  y_{ijkl} = \alpha_i + \beta_j + \theta_{ij} + \gamma_k + \epsilon_{ijkl}. \tag{2}
 \end{align*}
+where $y_{ijkl}$ is the measurement of a given variable for the $l$th replicate of a group of cells in staining set $k$ treated with ECMp $i$ and ligand $j$. 
+
 For dependent variables which were measured in only one staining set, stain\_num was dropped from the formula. 
 
 The intercept estimates the average value of the dependent variable measured for cells in staining set 1 treated with COL1 and FBS. Note that this treatment uses the control ECMp and control ligand, which makes it a natural baseline for comparison. 
