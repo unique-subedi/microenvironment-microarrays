@@ -478,20 +478,41 @@ make_pca_results_plot <- function(pca_results, pattern = ".*", title) {
     rel_heights = c(9, 1)
   )
 }
+
+make_pca_results_plots <- function(pattern = ".*", ss_nums = 1:3) {
+  if (pattern == ".*") {
+    title_template <- "PCA Results for Staining Set ${.x}, All Variables"
+  } else {
+    title_template <- 
+      "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
+  }
+  all_data2 %>%
+    filter(ss_num %in% ss_nums) %>%
+    mutate(
+      pca_results = map(data, run_pca, pattern = pattern),
+      title = map_chr(ss_num, ~ str_interp(title_template)),
+      pca_results_plot = map2(
+        pca_results, title, make_pca_results_plot, pattern = pattern
+      )
+    )
+}
 ```
 
 The plots below show that the first 20-30 PCs capture around 95\% of the variation for each staining set.
 ```{r pca}
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca),
-    title = map_chr(
-      ss_num, ~ str_interp("PCA Results for Staining Set ${.x}")
-    ),
-    pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = ".*"
-    )
-  ) %>%
+# all_data2 %>%
+#   mutate(
+#     pca_results = map(data, run_pca),
+#     title = map_chr(
+#       ss_num, ~ str_interp("PCA Results for Staining Set ${.x}")
+#     ),
+#     pca_results_plot = map2(
+#       pca_results, title, make_pca_results_plot, pattern = ".*"
+#     )
+#   ) %>%
+#   with(walk(pca_results_plot, grid.arrange))
+
+make_pca_results_plots() %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
@@ -528,98 +549,31 @@ all_data2 %>%
 
 Looking only at the AreaShape variables, fewer than ten PCs account for over 95\% of the variation. In particular, for staining set 2, just four PCs account for that percentage of the variation. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r areashape_pca}
-pattern <- "AreaShape"
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = pattern
-    )
-  ) %>%
+make_pca_results_plots(pattern = "AreaShape") %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 We next consider the Intensity variables. For staining sets 1 and 2, around five PCs capture 95\% of the variation. However, for staining set 3, 12-13 PCs are needed. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r intensity_pca}
-pattern <- "Intensity"
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = pattern
-    )
-  ) %>%
+make_pca_results_plots(pattern = "Intensity") %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 For the Cycle variables, for each staining set, the top two PCs account for all of the variation.  Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r cycle_pca}
-pattern <- "Cycle"
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = pattern
-    )
-  ) %>%
+make_pca_results_plots(pattern = "Cycle") %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r gated_pca}
-pattern <- "Gated"
-all_data2 %>%
-  filter(ss_num != 1) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = pattern
-    )
-  ) %>%
+make_pca_results_plots(pattern = "Intensity", ss_nums = c(1, 3)) %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 The Texture variables were only measured for staining set 2. Six PCs account for 95\% of the variation. The plot of the PC1 and PC2 loadings seems to suggest that the variables can be partitioned into three clusters.
 ```{r texture_pca}
-pattern <- "Texture"
-all_data2 %>%
-  filter(ss_num == 2) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = pattern
-    )
-  ) %>%
+make_pca_results_plots(pattern = "Texture", ss_nums = 2) %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
@@ -638,60 +592,19 @@ all_data2 %>%
 
 Looking at the Cells variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 3, the number is nine. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r cells_pca}
-pattern <- "Cells"
-all_data2 %>%
-  filter(ss_num != 2) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = pattern
-    )
-  ) %>%
+make_pca_results_plots(pattern = "Cells", ss_nums = c(1, 3)) %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 Looking at the Cytoplasm variables, for staining set 1, the first eight PCs account for 95\% of the variation. For staining set 3, the number is 15. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r cytoplasm_pca}
-pattern <- "Cytoplasm"
-all_data2 %>%
-  filter(ss_num != 2) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = pattern
-    )
-  ) %>%
+make_pca_results_plots(pattern = "Cytoplasm", ss_nums = c(1, 3)) %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 Looking at the Nuclei variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 2, the number is around 17. For staining set 3, the number is 11. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r nuclei_pca}
-pattern <- "Nuclei"
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    pca_results_plot = map2(
-      pca_results, title, make_pca_results_plot, pattern = pattern
-    )
-  ) %>%
+make_pca_results_plots(pattern = "Nuclei") %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
