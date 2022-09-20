@@ -41,17 +41,17 @@ super_tbl = bind_rows(tbls)
 
 # Analysis of Variance
 
-We fit linear models; most of the form (stated in the parlance of R)
+We fit linear models of the form 
 \begin{align*}
   \text{dependent\_var} \sim \text{Ligand1} + \text{ECM1} + \text{stain\_num} \tag{1}
 \end{align*}
-and a couple of the more complicated form
+and of the more complicated form
 \begin{align*}
   \text{dependent\_var} \sim \text{Ligand1}*\text{ECM1} + \text{stain\_num}. \tag{2}
 \end{align*}
 For dependent variables which were measured in only one staining set, stain\_num was dropped from the formula. 
 
-The intercept estimates the average value of the dependent variable measured for cells in staining set 1 (in the case where stain\_num is included; otherwise the sole staining set in which the variable was measured) treated with COL1 and FBS. Note that this treatment uses the control ECMp and control ligand, which makes it a natural baseline for comparison. 
+The intercept estimates the average value of the dependent variable measured for cells in staining set 1 treated with COL1 and FBS. Note that this treatment uses the control ECMp and control ligand, which makes it a natural baseline for comparison. 
 
 ```{r}
 lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE, 
