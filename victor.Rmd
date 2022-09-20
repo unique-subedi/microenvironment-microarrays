@@ -408,7 +408,7 @@ make_first_pc_loadings_plot <- function(pca_results, title) {
     enframe(name = "col", value = "loading") %>%
     ggplot(aes(loading)) +
     geom_histogram(color = "black", fill = "lightgray", binwidth = 0.01) +
-    labs(x = "Loading", y = "Number of Variables", title = title) +
+    labs(x = "PC1 Loading", y = "Number of Variables", title = title) +
     theme_bw() +
     theme(plot.title = element_text(hjust = 0.5))
 }
@@ -450,7 +450,7 @@ make_first_2_pcs_loadings_plot_pattern <- function(pca_results,
       title = title
     ) +
     theme_bw() +
-    theme(plot.title = element_text(hjust = 0.5))
+    theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
 }
 
 make_first_2_pcs_loadings_plot <- function(pca_results, pattern = ".*", title) {
@@ -460,55 +460,60 @@ make_first_2_pcs_loadings_plot <- function(pca_results, pattern = ".*", title) {
     make_first_2_pcs_loadings_plot_pattern(pca_results, pattern, title)
   }
 }
+
+make_pca_results_plot <- function(pca_results, pattern = ".*", title) {
+  panel1 <- make_prop_var_explained_plot(pca_results, title = NULL)
+  panel2 <- make_first_pc_loadings_plot(pca_results, title = NULL)
+  panel3 <- make_first_2_pcs_loadings_plot(pca_results, pattern, title = NULL)
+  
+  legend <- get_legend(panel3)
+  if (is.null(legend)) {
+    return(arrangeGrob(panel1, panel2, panel3, nrow = 1, top = title))
+  }
+  panel3 <- panel3 + theme(legend.position = "none")
+  plot_grid(
+    arrangeGrob(panel1, panel2, panel3, nrow = 1, top = title),
+    legend,
+    ncol = 1,
+    rel_heights = c(9, 1)
+  )
+}
+
+make_pca_results_plots <- function(pattern = ".*", ss_nums = 1:3) {
+  if (pattern == ".*") {
+    title_template <- "PCA Results for Staining Set ${.x}, All Variables"
+  } else {
+    title_template <- 
+      "PCA Results for Staining Set ${.x}, ${pattern} Variables Only"
+  }
+  all_data2 %>%
+    filter(ss_num %in% ss_nums) %>%
+    mutate(
+      pca_results = map(data, run_pca, pattern = pattern),
+      title = map_chr(ss_num, ~ str_interp(title_template)),
+      pca_results_plot = map2(
+        pca_results, title, make_pca_results_plot, pattern = pattern
+      )
+    )
+}
 ```
 
 The plots below show that the first 20-30 PCs capture around 95\% of the variation for each staining set.
 ```{r pca}
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca),
-    title = map_chr(
-      ss_num, ~ str_interp("PCA for Staining Set ${.x}")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num, ~ str_interp("PC1 Loadings for Staining Set ${.x}")
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    ),
-    title = map_chr(
-      ss_num, ~ str_interp("PC1, PC2 Loadings for Staining Set ${.x}")
-    ),
-    first_2_pcs_loadings_plot = map2(
-      pca_results, title, make_first_2_pcs_loadings_plot, pattern = ".*"
-    )
-  ) %>%
-  with(
-    {
-      walk(prop_var_explained_plot, print)
-      walk(first_pc_loadings_plot, print)
-      walk(first_2_pcs_loadings_plot, print)
-    }
-  )
-```
+# all_data2 %>%
+#   mutate(
+#     pca_results = map(data, run_pca),
+#     title = map_chr(
+#       ss_num, ~ str_interp("PCA Results for Staining Set ${.x}")
+#     ),
+#     pca_results_plot = map2(
+#       pca_results, title, make_pca_results_plot, pattern = ".*"
+#     )
+#   ) %>%
+#   with(walk(pca_results_plot, grid.arrange))
 
-```{r pca_by_plate, eval=FALSE, include=FALSE}
-all_data %>%
-  nest(data = !c(ss_num, plate_num)) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = "AreaShape"),
-    title = map2_chr(
-      ss_num, plate_num,
-      ~ str_interp("AreaShape PCA for Plate ${.y} of Staining Set ${.x}")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    )
-  ) %>%
-  with(walk(prop_var_explained_plot, print))
+make_pca_results_plots() %>%
+  with(walk(pca_results_plot, grid.arrange))
 ```
 
 Define a function that counts non-trivial numeric columns whose names match a pattern.
@@ -544,209 +549,32 @@ all_data2 %>%
 
 Looking only at the AreaShape variables, fewer than ten PCs account for over 95\% of the variation. In particular, for staining set 2, just four PCs account for that percentage of the variation. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r areashape_pca}
-pattern <- "AreaShape"
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_2_pcs_loadings_plot = map2(
-      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
-    )
-  ) %>%
-  with(
-    {
-      walk(prop_var_explained_plot, print)
-      walk(first_pc_loadings_plot, print)
-      walk(first_2_pcs_loadings_plot, print)
-    }
-  )
+make_pca_results_plots(pattern = "AreaShape") %>%
+  with(walk(pca_results_plot, grid.arrange))
 ```
 
 We next consider the Intensity variables. For staining sets 1 and 2, around five PCs capture 95\% of the variation. However, for staining set 3, 12-13 PCs are needed. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r intensity_pca}
-pattern <- "Intensity"
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_2_pcs_loadings_plot = map2(
-      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
-    )
-  ) %>%
-  with(
-    {
-      walk(prop_var_explained_plot, print)
-      walk(first_pc_loadings_plot, print)
-      walk(first_2_pcs_loadings_plot, print)
-    }
-  )
+make_pca_results_plots(pattern = "Intensity") %>%
+  with(walk(pca_results_plot, grid.arrange))
 ```
 
 For the Cycle variables, for each staining set, the top two PCs account for all of the variation.  Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r cycle_pca}
-pattern <- "Cycle"
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_2_pcs_loadings_plot = map2(
-      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
-    )
-  ) %>%
-  with(
-    {
-      walk(prop_var_explained_plot, print)
-      walk(first_pc_loadings_plot, print)
-      walk(first_2_pcs_loadings_plot, print)
-    }
-  )
+make_pca_results_plots(pattern = "Cycle") %>%
+  with(walk(pca_results_plot, grid.arrange))
 ```
 
 We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r gated_pca}
-pattern <- "Gated"
-all_data2 %>%
-  filter(ss_num != 1) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_2_pcs_loadings_plot = map2(
-      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
-    )
-  ) %>%
-  with(
-    {
-      walk(prop_var_explained_plot, print)
-      walk(first_pc_loadings_plot, print)
-      walk(first_2_pcs_loadings_plot, print)
-    }
-  )
+make_pca_results_plots(pattern = "Intensity", ss_nums = c(1, 3)) %>%
+  with(walk(pca_results_plot, grid.arrange))
 ```
 
 The Texture variables were only measured for staining set 2. Six PCs account for 95\% of the variation. The plot of the PC1 and PC2 loadings seems to suggest that the variables can be partitioned into three clusters.
 ```{r texture_pca}
-pattern <- "Texture"
-all_data2 %>%
-  filter(ss_num == 2) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_2_pcs_loadings_plot = map2(
-      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
-    )
-  ) %>%
-  with(
-    {
-      walk(prop_var_explained_plot, print)
-      walk(first_pc_loadings_plot, print)
-      walk(first_2_pcs_loadings_plot, print)
-    }
-  )
+make_pca_results_plots(pattern = "Texture", ss_nums = 2) %>%
+  with(walk(pca_results_plot, grid.arrange))
 ```
 
 ### PCA by Cell Part
@@ -764,127 +592,20 @@ all_data2 %>%
 
 Looking at the Cells variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 3, the number is nine. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r cells_pca}
-pattern <- "Cells"
-all_data2 %>%
-  filter(ss_num != 2) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = "Cells"),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_2_pcs_loadings_plot = map2(
-      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
-    )
-  ) %>%
-  with(
-    {
-      walk(prop_var_explained_plot, print)
-      walk(first_pc_loadings_plot, print)
-      walk(first_2_pcs_loadings_plot, print)
-    }
-  )
+make_pca_results_plots(pattern = "Cells", ss_nums = c(1, 3)) %>%
+  with(walk(pca_results_plot, grid.arrange))
 ```
 
 Looking at the Cytoplasm variables, for staining set 1, the first eight PCs account for 95\% of the variation. For staining set 3, the number is 15. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r cytoplasm_pca}
-pattern <- "Cytoplasm"
-all_data2 %>%
-  filter(ss_num != 2) %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = "Cytoplasm"),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_2_pcs_loadings_plot = map2(
-      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
-    )
-  ) %>%
-  with(
-    {
-      walk(prop_var_explained_plot, print)
-      walk(first_pc_loadings_plot, print)
-      walk(first_2_pcs_loadings_plot, print)
-    }
-  )
+make_pca_results_plots(pattern = "Cytoplasm", ss_nums = c(1, 3)) %>%
+  with(walk(pca_results_plot, grid.arrange))
 ```
 
 Looking at the Nuclei variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 2, the number is around 17. For staining set 3, the number is 11. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
 ```{r nuclei_pca}
-pattern <- "Nuclei"
-all_data2 %>%
-  mutate(
-    pca_results = map(data, run_pca, pattern = pattern),
-    title = map_chr(
-      ss_num,
-      ~ str_interp("PCA for Staining Set ${.x}, ${pattern} Variables Only")
-    ),
-    prop_var_explained_plot = map2(
-      pca_results, title, make_prop_var_explained_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_pc_loadings_plot = map2(
-      pca_results, title, make_first_pc_loadings_plot
-    ),
-    title = map_chr(
-      ss_num,
-      ~ str_interp(
-        "PC1, PC2 Loadings for Staining Set ${.x}, ${pattern} Variables Only"
-      )
-    ),
-    first_2_pcs_loadings_plot = map2(
-      pca_results, title, make_first_2_pcs_loadings_plot, pattern = pattern
-    )
-  ) %>%
-  with(
-    {
-      walk(prop_var_explained_plot, print)
-      walk(first_pc_loadings_plot, print)
-      walk(first_2_pcs_loadings_plot, print)
-    }
-  )
+make_pca_results_plots(pattern = "Nuclei") %>%
+  with(walk(pca_results_plot, grid.arrange))
 ```
 
 # Outlier Detection
@@ -1000,344 +721,4 @@ all_data2 %>%
   ) %>%
   select(!data) %>%
   with(walk(outlyingness_plots, print))
-```
-
-# Delete/update chunks below
-
-```{r eval=FALSE, include=FALSE}
-data %>%
-  distinct(plate, Well, Ligand) %>%
-  arrange(Well, Ligand)
-
-data %>%
-  filter(StainingSet == unique(StainingSet)[1]) %>%
-  distinct(Well, Ligand) %>%
-  arrange(Well, Ligand)
-
-LI8X00510_Level2 %>%
-  select(Well, contains("ligand")) %>%
-  distinct()
-
-data %>%
-  select(StainingSet, plate, Well, contains("ligand")) %>%
-  distinct() %>%
-  arrange(StainingSet, plate, Well) %>%
-  nest(tbl = !c(StainingSet, plate)) %>%
-  group_by(StainingSet) %>%
-  summarize(num_tbls = n_distinct(tbl))
-
-# Same ligand positionings for each StainingSet
-data %>%
-  select(StainingSet, plate, Well, contains("ligand")) %>%
-  distinct() %>%
-  arrange(StainingSet, plate, Well) %>%
-  nest(tbl = !c(StainingSet, plate)) %>%
-  group_by(StainingSet) %>%
-  summarize(tbls = list(tbl)) %>%
-  pull(tbls) %>%
-  n_distinct()
-```
-
-There are no missing values in `ArrayRow` or `ArrayColumn`.
-```{r nas_in_array_row_col, eval=FALSE, include=FALSE}
-data %>%
-  select(ArrayRow, ArrayColumn) %>%
-  vec_detect_complete() %>%
-  all()
-```
-
-`Spot` is related to `ArrayRow` and `ArrayColumn` in the expected way.
-```{r spot_arrayrow_arraycol, eval=FALSE, include=FALSE}
-map_lgl(
-  tbls,
-  ~ .x %>%
-    mutate(Spot2 = max(ArrayColumn) * (ArrayRow - 1) + ArrayColumn - 1) %>%
-    summarize(are_equal = all(near(Spot2, Spot - 1))) %>%
-    pull()
-) %>%
-  all()
-```
-
-The filenames and barcodes are essentially the same.
-```{r barcodes, eval=FALSE, include=FALSE}
-imap_lgl(
-  tbls,
-  ~ identical(unique(.x$Barcode), str_remove(.y, "_Level2$"))
-) %>%
-  all()
-```
-
-The ECM2 columns are the same across all wells.
-```{r ECM2, eval=FALSE, include=FALSE}
-map(
-  tbls,
-  ~ unique(select(.x, contains("ECM2")))
-) %>%
-  unique()
-```
-
-As expected, each plate has one stain.
-```{r num_staining_sets_per_plate, eval=FALSE, include=FALSE}
-map(tbls, ~ n_distinct(.x$StainingSet)) %>% unique()
-```
-
-There are eight plates for each stain.
-```{r num_plates_per_staining_set, eval=FALSE, include=FALSE}
-map_chr(tbls, ~ .x$StainingSet[1]) %>% table()
-```
-
-Plates with the same staining set have the same variables.
-```{r var_name_sets, eval=FALSE, include=FALSE}
-tbls %>%
-  map_dfr(
-    function(tbl) {
-      tibble(StainingSet = tbl$StainingSet[1], var_names = list(names(tbl)))
-    }
-  ) %>%
-  group_by(StainingSet) %>%
-  summarize(num_var_name_sets = n_distinct(var_names))
-```
-
-There are three count columns in each file.
-```{r count_count_cols, eval=FALSE, include=FALSE}
-map(
-  tbls,
-  ~ names(select(.x, contains("count")))
-) %>%
-  unique()
-```
-
-`Spot_PA_SpotCellCount_SE` always equals zero.
-```{r Spot_PA_SpotCellCount_SE, eval=FALSE, include=FALSE}
-map_lgl(
-  tbls,
-  . %>% pull(Spot_PA_SpotCellCount_SE) %>% near(0) %>% all()
-) %>%
-  all()
-```
-
-`Spot_PA_ReplicateCount` seems to have something to do with the reuse of ECMPs within wells since its maximum value is 15. How should this column be interpreted?
-```{r Spot_PA_ReplicateCount, eval=FALSE, include=FALSE}
-map(
-  tbls,
-  . %>%
-    pull(Spot_PA_ReplicateCount) %>%
-    table() %>%
-    proportions() %>%
-    sort(decreasing = TRUE) %>%
-    cumsum() %>%
-    signif(digits = 2)
-)
-```
-
-```{r, eval=FALSE, include=FALSE}
-map_dfr(
-  tbls,
-  ~ summarize(
-    .x,
-    stain = StainingSet[1],
-    num_nas = sum(is.na(Spot_PA_SpotCellCount)),
-    min_ct = min(Spot_PA_SpotCellCount, na.rm = TRUE),
-    max_ct = max(Spot_PA_SpotCellCount, na.rm = TRUE),
-  ),
-  .id = "tbl"
-)
-```
-
-The cell count distributions for the different staining sets are quite different.
-```{r cell_count_dists, eval=FALSE, include=FALSE}
-tbls %>%
-  map_dfr(~ select(.x, StainingSet, Spot_PA_SpotCellCount), .id = "tbl") %>%
-  ggplot(aes(Spot_PA_SpotCellCount, color = StainingSet)) +
-  geom_freqpoly() +
-  labs(x = "Cell Count", y = "Number of Spots", color = "Staining Set") +
-  theme_bw()
-```
-
-For this one plate, the counts for well 3 are lower than for the other wells. There are also fewer spots for that well than for the other wells.
-```{r one_plate_heatmap, eval=FALSE, include=FALSE}
-LI8X00510_Level2 %>%
-  ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
-  facet_wrap(vars(Well), nrow = 2, labeller = partial(label_both, sep = " ")) +
-  geom_tile() +
-  labs(x = "Column Index", y = "Row Index", fill = "Cell Count") +
-  theme_bw()
-```
-
-```{r dists_by_ligand, eval=FALSE, include=FALSE}
-data %>%
-  ggplot(aes(Ligand, Spot_PA_SpotCellCount)) +
-  geom_boxplot() +
-  theme_bw()
-data %>%
-  ggplot(aes(Ligand, Cells_CP_AreaShape_Area)) +
-  geom_boxplot() +
-  theme_bw()
-data %>%
-  ggplot(aes(Ligand, Cells_CP_AreaShape_Perimeter)) +
-  geom_boxplot() +
-  theme_bw()
-```
-
-```{r, echo=FALSE, eval=FALSE, include=FALSE}
-data %>%
-  filter(Ligand == "FBS") %>%
-  select(StainingSet, ECMp, plate, Spot_PA_SpotCellCount) %>%
-  arrange(StainingSet, ECMp, plate) %>%
-  filter(ECMp == "air") %>%
-  arrange(plate)
-```
-
-
-```{r, echo=FALSE, eval=FALSE, include=FALSE}
-data %>%
-  select(StainingSet, plate, Ligand, Spot_PA_SpotCellCount) %>%
-  count(StainingSet, plate, Ligand) %>%
-  pivot_wider(id_cols = Ligand, names_from = StainingSet, values_from = n)
-
-data %>%
-  select(StainingSet, plate, Ligand, Spot_PA_SpotCellCount) %>%
-  filter(
-    StainingSet == "SS1Layout1Set1",
-    plate == "LI8X00519_Level2",
-    Ligand == "ANGPT1|1"
-  )
-
-data %>%
-  distinct(StainingSet, Ligand, Spot_PA_SpotCellCount) %>%
-  filter(Ligand == "ANGPT1|1", StainingSet == "SS2noH3Layout1Set1")
-
-data %>%
-  distinct(StainingSet, Ligand, Spot_PA_SpotCellCount) %>%
-  filter(Ligand == "ANGPT1|1", StainingSet == "SS3Layout1Set3")
-
-data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  
-```
-
-```{r, eval=FALSE, include=FALSE}
-# Too many variables
-data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  select(starts_with("Cells_CP_AreaShape_")) %>%
-  select(
-    -c(Cells_CP_AreaShape_Extent, Cells_CP_AreaShape_FormFactor,
-       Cells_CP_AreaShape_Orientation, Cells_CP_AreaShape_Solidity)
-  ) %>%
-  pairs()
-
-data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  select(starts_with("Cells_CP_AreaShape_")) %>%
-  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
-  select(Area, Compactness, Eccentricity) %>%
-  ggpairs(aes(alpha = 0.1)) +
-  theme_bw()
-
-data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  select(starts_with("Cells_CP_AreaShape_")) %>%
-  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
-  select(Area, Compactness, Eccentricity) %>%
-  mutate(across(.fns = ~ qnorm(rank(.x) / (n() + 1)))) %>%
-  ggpairs() +
-  theme_bw()
-
-data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  select(starts_with("Cells_CP_AreaShape_")) %>%
-  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
-  select(Compactness, Eccentricity) %>%
-  ggplot(aes(Compactness, Eccentricity)) +
-  geom_point(alpha = 0.1) +
-  coord_cartesian(xlim = c(1, 2)) +
-  theme_bw()
-
-data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  select(starts_with("Cells_CP_AreaShape_")) %>%
-  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
-  select(Compactness, Eccentricity) %>%
-  mutate(across(.fns = ~ qnorm(rank(.x) / (n() + 1)))) %>%
-  ggplot(aes(Compactness, Eccentricity)) +
-  geom_point(alpha = 0.1) +
-  theme_bw()
-```
-
-```{r, eval=FALSE, include=FALSE}
-calc_cor <- function(ligand, ecmp, var1, var2) {
-  
-}
-```
-
-
-```{r, eval=FALSE, include=FALSE}
-data1 <- data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  select(where(~ any(!is.na(.x)))) %>%
-  select(plate, Ligand, ECMp, where(is.numeric))
-data1 %>%
-  select(where(is.numeric)) %>%
-  names() %>%
-  expand_grid(var1 = ., var2 = .) %>%
-  filter(var1 != var2) %>%
-  mutate(
-    var1_vals = map(var1, ~ data1[[.x]]), var2_vals = map(var2, ~ data1[[.x]])
-  )
-data1 %>%
-  select()
-```
-
-
-```{r, eval=FALSE, include=FALSE}
-data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  select(plate, Ligand, ECMp, Spot_PA_SpotCellCount, contains("AreaShape"))
-```
-
-```{r, eval=FALSE, include=FALSE}
-data %>%
-  select(StainingSet, contains("neighbor")) %>%
-  ggplot(aes(Nuclei_PA_AreaShape_Neighbors, color = StainingSet)) +
-  geom_freqpoly() +
-  theme_bw()
-
-data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  ggplot(aes(Nuclei_PA_AreaShape_Neighbors)) +
-  geom_histogram() +
-  theme_bw()
-
-data %>%
-  select(StainingSet, contains("neighbor")) %>%
-  group_by(StainingSet) %>%
-  summarize(
-    neighbors_dist = list(
-      sort(table(Nuclei_PA_AreaShape_Neighbors), decreasing = TRUE)
-    )
-  ) %>%
-  deframe()
-```
-
-```{r, eval=FALSE, include=FALSE}
-data %>%
-  filter(StainingSet == "SS1Layout1Set1") %>%
-  rename_with(str_remove, pattern = "^Cells_CP_AreaShape_") %>%
-  select(Ligand, ECMp, Area, Perimeter) %>%
-  arrange(Ligand, ECMp) %>%
-  group_by(Ligand, ECMp) %>%
-  mutate( # How should ties be broken when ranking?
-    cor = cor(Area, Perimeter),
-    Area2 = qnorm(rank(Area) / (n() + 1)),
-    Perimeter2 = qnorm(rank(Perimeter) / (n() + 1)),
-    cor2 = cor(Area2, Perimeter2),
-    num_replicates = n()
-  ) %>%
-  ungroup() %>%
-  filter(num_replicates >= 10) %>%
-  distinct(Ligand, ECMp, cor2) %>%
-  ggplot(aes(cor2)) +
-  geom_histogram() +
-  theme_bw()
 ```
