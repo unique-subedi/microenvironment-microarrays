@@ -408,7 +408,7 @@ make_first_pc_loadings_plot <- function(pca_results, title) {
     enframe(name = "col", value = "loading") %>%
     ggplot(aes(loading)) +
     geom_histogram(color = "black", fill = "lightgray", binwidth = 0.01) +
-    labs(x = "Loading", y = "Number of Variables", title = title) +
+    labs(x = "PC1 Loading", y = "Number of Variables", title = title) +
     theme_bw() +
     theme(plot.title = element_text(hjust = 0.5))
 }
