@@ -53,9 +53,17 @@ where $y_{ijkl}$ is the measurement of a given variable for the $l$th replicate 
 
 The intercept estimates the average value of the dependent variable measured for cells in staining set 1 treated with COL1 and FBS. Note that this treatment uses the control ECMp and control ligand, which makes it a natural baseline for comparison. 
 
+## Nuclei_CP_AreaShape_Area model
+
+We'd like to determine whether the ECMp-ligand interactions are worth keeping in the model. The unimportance of such interactions may suggest that further analysis can ignore interactions. 
+
+Based on the following output, model $(1)$ has superior AIC. However, the F-test suggests keeping interaction effects. 
+
 ```{r}
-lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE, 
-                       print_aov_summary = TRUE){
+var_name = "Nuclei_CP_AreaShape_Area"
+fit_big_lm = TRUE 
+print_aov_summary = TRUE
+
   lm_super_tbl = super_tbl %>%
   mutate(ECM1 = as.factor(ECM1) %>% 
            relevel(ref = "COL1_go0005584")) %>%
@@ -147,28 +155,108 @@ lm_analysis = function(var_name, super_tbl, fit_big_lm = FALSE,
     draw_label(paste0("Estimated effect of treatment on ", var_name),
                size = 9)
   print(plot_grid(gg_title, gg_grid, ncol=1, rel_heights=c(0.1, 1)))
-}
-
 ```
 
-## Nuclei_CP_AreaShape_Area
+## Spot_PA_SpotCellCount model
 
-We'd like to determine whether the ECMp-ligand interactions are worth keeping in the model. The unimportance of such interactions may suggest that further analysis can ignore interactions. 
-
-Based on the following output, model $(1)$ has superior AIC. However, the F-test suggests keeping interaction effects. 
+Once again, the simpler linear model has superior AIC while the F-test suggests keeping interaction effects.
 
 ```{r}
-lm_analysis("Nuclei_CP_AreaShape_Area", super_tbl, fit_big_lm = FALSE)
-```
+var_name = "Spot_PA_SpotCellCount"
+fit_big_lm = TRUE 
+print_aov_summary = TRUE
 
-## Spot_PA_SpotCellCount 
+  lm_super_tbl = super_tbl %>%
+  mutate(ECM1 = as.factor(ECM1) %>% 
+           relevel(ref = "COL1_go0005584")) %>%
+  mutate(Ligand1 = as.factor(Ligand1) %>% 
+           relevel(ref = "FBS_pubchemsid56314508")) %>%
+    filter(!is.na(.[[var_name]]))
 
-Once again, the simpler linear model has superior AIC while the F-test suggests keeping interaction effects. 
-
-For simplicity, we suggest leaving out interaction effects. 
-
-```{r}
-lm_analysis("Spot_PA_SpotCellCount", super_tbl, fit_big_lm = FALSE)
+  # ~13.5 minutes
+  if(fit_big_lm){
+    if(length(unique(lm_super_tbl$stain_num)) == 1){
+      area_treatment_lm = aov(
+        lm_super_tbl[[var_name]] ~ ECM1*Ligand1,
+        data = lm_super_tbl
+      )
+    } else {
+      area_treatment_lm = aov(
+        lm_super_tbl[[var_name]] ~ ECM1*Ligand1+stain_num,
+        data = lm_super_tbl
+      )
+    }
+    if(print_aov_summary){
+      cat(var_name, " interactions model summary: \n")
+      print(summary(area_treatment_lm))
+      cat("AIC: ", AIC(area_treatment_lm), 
+          "; Adjusted R^2: ", summary.lm(area_treatment_lm)$adj.r.squared,
+          "\n\n")
+    }
+  }
+  
+  if(length(unique(lm_super_tbl$stain_num)) == 1){
+    simple_area_treatment_lm = aov(
+      lm_super_tbl[[var_name]] ~ ECM1+Ligand1,
+      data = lm_super_tbl
+    )
+  } else {
+    simple_area_treatment_lm = aov(
+      lm_super_tbl[[var_name]] ~ ECM1+Ligand1+stain_num,
+      data = lm_super_tbl
+    )
+  }
+  if(print_aov_summary){
+    cat(var_name, " model summary: \n")
+    print(summary(simple_area_treatment_lm))
+    cat("AIC: ", AIC(simple_area_treatment_lm), 
+        "; Adjusted R^2: ", summary.lm(simple_area_treatment_lm)$adj.r.squared,
+        "\n\n")  
+  }
+  
+  simple_coefficients_tbl = tibble(
+    coefficient = names(simple_area_treatment_lm$coefficients),
+    Value = simple_area_treatment_lm$coefficients
+  ) %>%
+    extract(col = coefficient, 
+             into = c("Type", "Treatment"),
+             regex = "(Ligand1|ECM1|stain_num|\\(Intercept\\))(.*)") %>%
+    mutate(Positive = Value > 0)
+  
+  simple_coefficients_tbl %>%
+    filter(Type == "(Intercept)" | Type == "stain_num") %>%
+    select(!Positive) %>%
+    kable() %>%
+    print()
+  
+  gg1 = ggplot(simple_coefficients_tbl %>% 
+        filter(Type == "ECM1") %>%
+        mutate(Treatment = fct_reorder(factor(Treatment), Value)),
+    aes(x = Value, y = Treatment, fill = Positive)) +
+    geom_col() + 
+    theme(legend.position = "none", axis.text.y = element_text(size=5),
+          axis.text.x = element_text(size=6),
+          plot.title = element_text(size = 10),
+          axis.title = element_text(size = 6)) + 
+    ylab("ECMP") + 
+    xlab("Estimated coefficient")
+    
+  gg2 = ggplot(simple_coefficients_tbl %>% 
+        filter(Type == "Ligand1") %>%
+        mutate(Treatment = fct_reorder(factor(Treatment), Value)),
+    aes(x = Value, y = Treatment, fill = Positive)) +
+    geom_col() + 
+    theme(legend.position = "none", axis.text.y = element_text(size=5),
+          axis.text.x = element_text(size=6),
+          plot.title = element_text(size = 10), 
+          axis.title = element_text(size = 7)) + 
+    ylab("Ligand") + 
+    xlab("Estimated coefficient")
+  gg_grid = plot_grid(gg1, gg2)
+  gg_title = ggdraw() + 
+    draw_label(paste0("Estimated effect of treatment on ", var_name),
+               size = 9)
+  print(plot_grid(gg_title, gg_grid, ncol=1, rel_heights=c(0.1, 1)))
 ```
 
 
