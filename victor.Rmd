@@ -4,7 +4,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 library(cowplot)
 library(grid)
 library(gridExtra)
@@ -14,26 +14,26 @@ library(tools)
 library(vctrs)
 ```
 
-# Data Loading
+<!-- # Data Loading -->
 
-Make one tibble with all of the data.
+<!-- Make one tibble with all of the data. -->
 ```{r make_all_data, cache=TRUE, message=FALSE}
 files <- dir("Data/", full.names = TRUE)
 names(files) <- file_path_sans_ext(basename(files))
 all_data <- map_dfr(files, read_tsv, .id = "plate")
 ```
 
-There seems to be just one column with staining set information.
-```{r find_ss_cols}
+<!-- There seems to be just one column with staining set information. -->
+```{r find_ss_cols, eval=FALSE}
 select(all_data, contains("stain"))
 ```
 
-These are the names of the staining sets.
-```{r ss_nms}
+<!-- These are the names of the staining sets. -->
+```{r ss_nms, eval=FALSE}
 unique(all_data$StainingSet)
 ```
 
-Number the staining sets and the plates.
+<!-- Number the staining sets and the plates. -->
 ```{r number_sss_and_plates}
 all_data <- all_data %>%
   relocate(StainingSet, .before = 1) %>%
@@ -52,7 +52,7 @@ all_data <- all_data %>%
   arrange(ss_num, plate_num)
 ```
 
-Create one tibble for each staining set.
+<!-- Create one tibble for each staining set. -->
 ```{r make_ss_tbls, cache=TRUE}
 all_data2 <- nest(all_data, data = !c(StainingSet, ss_num))
 with(
@@ -66,10 +66,10 @@ with(
 )
 ```
 
-# Missingness Analysis
+<!-- # Missingness Analysis -->
 
-For each staining set, there are many columns that only have NAs, seemingly because different variables were measured for different staining sets.
-```{r find_na_only_cols}
+<!-- For each staining set, there are many columns that only have NAs, seemingly because different variables were measured for different staining sets. -->
+```{r find_na_only_cols, eval=FALSE}
 find_na_only_cols <- function(data) {
   data %>% select(where(~ all(is.na(.x)))) %>% names()
 }
@@ -78,7 +78,7 @@ all_data2 %>%
   pull()
 ```
 
-Drop columns that only have missing values.
+<!-- Drop columns that only have missing values. -->
 ```{r drop_na_only_cols}
 drop_na_only_cols <- function(data) select(data, !where(~ all(is.na(.x))))
 
@@ -89,9 +89,8 @@ ss2_data <- drop_na_only_cols(ss2_data)
 ss3_data <- drop_na_only_cols(ss3_data)
 ```
 
-For each staining set, only a few columns have missing values; these columns are the same across staining sets. They are only missing a small proportion of their
-values.
-```{r find_cols_w_nas}
+<!-- For each staining set, only a few columns have missing values; these columns are the same across staining sets. They are only missing a small proportion of their values. -->
+```{r find_cols_w_nas, eval=FALSE}
 find_cols_w_nas <- function(data) {
   data %>%
     summarize(across(.fns = ~ mean(is.na(.x)))) %>%
@@ -100,8 +99,8 @@ find_cols_w_nas <- function(data) {
 all_data2 %>% mutate(map(data, find_cols_w_nas)) %>% pull()
 ```
 
-When an `ECM2` column is missing a value, `ECMp` is collagen, which makes sense.
-```{r examine_cols_w_nas}
+<!-- When an `ECM2` column is missing a value, `ECMp` is collagen, which makes sense. -->
+```{r examine_cols_w_nas, eval=FALSE}
 check_ECM2_cols_w_nas <- function(data) {
   data %>%
     select(ECMp, contains("ECM2")) %>%
@@ -114,8 +113,8 @@ check_ECM2_cols_w_nas <- function(data) {
 all_data2 %>% mutate(map(data, check_ECM2_cols_w_nas)) %>% pull()
 ```
 
-When `ECM1Lx` is missing a value, `ECMp` is either `ELN|3` or `air`. I don't know what to make of this.
-```{r examine_cols_w_nas2}
+<!-- When `ECM1Lx` is missing a value, `ECMp` is either `ELN|3` or `air`. I don't know what to make of this. -->
+```{r examine_cols_w_nas2, eval=FALSE}
 check_ECM1Lx <- function(data) {
   data %>%
     filter(is.na(ECM1Lx)) %>%
@@ -127,8 +126,8 @@ check_ECM1Lx <- function(data) {
 all_data2 %>% mutate(map(data, check_ECM1Lx)) %>% pull()
 ```
 
-When `Ligand1Lx` is missing a value, `Ligand` is `FGF2|3`. I don't know what to make of this.
-```{r examine_cols_w_nas3}
+<!-- When `Ligand1Lx` is missing a value, `Ligand` is `FGF2|3`. I don't know what to make of this. -->
+```{r examine_cols_w_nas3, eval=FALSE}
 check_Ligand1Lx <- function(data) {
   data %>%
     filter(is.na(Ligand1Lx)) %>%
@@ -140,126 +139,12 @@ check_Ligand1Lx <- function(data) {
 all_data2 %>% mutate(map(data, check_Ligand1Lx)) %>% pull()
 ```
 
-# Structure Checks
-
-There are as many plates as expected.
-```{r check_num_plates}
-all_data %>% group_by(StainingSet) %>% summarize(num_plates = n_distinct(plate))
-```
-
-The name of each plate matches the pattern below.
-```{r check_plate_name_pattern}
-all_data %>% pull(plate) %>% str_detect("^LI8X005\\d{2}_Level2$") %>% all()
-```
-
-The plates are numbered consecutively, except two numbers are skipped. Maybe they were skipped to provide another way to separate the plates into staining sets? The skipped numbers divide the plates into three batches of eight.
-```{r check_plate_numbering}
-all_data %>%
-  pull(plate) %>%
-  str_extract("5\\d{2}") %>%
-  as.integer() %>%
-  {
-    seq_ <- seq(min(.), max(.), by = 1)
-    setdiff(seq_, .)
-  }
-```
-
-As expected, there are eight wells for each plate.
-```{r check_well_numbers}
-all_data %>%
-  group_by(StainingSet, plate) %>%
-  summarize(num_wells = n_distinct(Well))
-```
-
-There are several columns with ligand information. 56 different ligands were used in the experiment. There are several columns with 57 values - probably the extra value represents the absence of a ligand. I'll use `Ligand`.
-```{r find_ligand_cols}
-summarize(all_data, across(contains("ligand"), n_distinct, na.rm = TRUE))
-
-all_data %>%
-  select(contains("ligand") & where(~ n_distinct(.x, na.rm = TRUE) >= 56)) %>%
-  distinct()
-```
-
-There was one control well on each plate, so there should be one ligand code that is present for each plate. For each ligand variable, the only such code is given below.
-```{r find_control_ligand}
-all_data %>%
-  group_by(plate) %>%
-  summarize(ligands = list(unique(Ligand))) %>%
-  pull(ligands) %>%
-  reduce(intersect)
-all_data %>%
-  group_by(plate) %>%
-  summarize(ligands = list(unique(Ligand1))) %>%
-  pull(ligands) %>%
-  reduce(intersect)
-all_data %>%
-  group_by(plate) %>%
-  summarize(ligands = list(unique(Ligand1Lx))) %>%
-  pull(ligands) %>%
-  reduce(intersect)
-all_data %>%
-  group_by(plate) %>%
-  summarize(ligands = list(unique(Ligand1An))) %>%
-  pull(ligands) %>%
-  reduce(intersect)
-```
-
-# Cell Count Analysis
-
-There are no spots at which the cell count is zero.
-```{r check_cell_counts}
-summarize(all_data, num_zeros = sum(Spot_PA_SpotCellCount == 0))
-```
-
-For each plate, make a heatmap showing the cell count for each spot and a histogram of the cell counts. In several plates, there are many white rectangles. Based on the histograms, those appear to be due to many very low counts.
-```{r make_heatmaps_and_histograms, cache=TRUE}
-make_heatmap <- function(StainingSet, plate, tbl) {
-  tbl %>%
-    ggplot(aes(ArrayColumn, ArrayRow, fill = Spot_PA_SpotCellCount)) +
-    facet_wrap(
-      vars(Well), nrow = 2, labeller = partial(label_both, sep = " ")
-    ) +
-    geom_tile() +
-    labs(
-      x = "Column Index", y = "Row Index", fill = "Cell Count",
-      title = str_c(StainingSet, plate, sep = ", ")
-    ) +
-    theme_bw() +
-    theme(plot.title = element_text(hjust = 0.5))
-}
-make_histogram <- function(StainingSet, plate, tbl) {
-  tbl %>%
-    ggplot(aes(Spot_PA_SpotCellCount)) +
-    facet_wrap(
-      vars(Well), nrow = 2, labeller = partial(label_both, sep = " ")
-    ) +
-    geom_histogram(binwidth = 1) +
-    labs(
-      x = "Cell Count", y = "Number of Spots",
-      title = str_c(StainingSet, plate, sep = ", ")
-    ) +
-    theme_bw() +
-    theme(plot.title = element_text(hjust = 0.5))
-}
-all_data %>%
-  select(
-    StainingSet, plate, Well, ArrayColumn, ArrayRow, Spot_PA_SpotCellCount
-  ) %>%
-  nest(tbl = !c(StainingSet, plate)) %>%
-  mutate(
-    heatmap = pmap(list(StainingSet, plate, tbl), make_heatmap),
-    histogram = pmap(list(StainingSet, plate, tbl), make_histogram),
-    plot = map2(heatmap, histogram, ~ arrangeGrob(.x, .y))
-  ) %>%
-  with(walk(plot, grid.arrange))
-```
-
 # Dimensionality Reduction
 
-## Variable Scales
+<!-- ## Variable Scales -->
 
-These seem to be the numeric ID columns; these should be excluded when doing PCA.
-```{r find_numeric_id_cols}
+<!-- These seem to be the numeric ID columns; these should be excluded when doing PCA. -->
+```{r find_numeric_id_cols, include=FALSE}
 numeric_id_cols <- all_data %>%
   select(
     where(is.numeric) &
@@ -272,13 +157,13 @@ numeric_id_cols <- all_data %>%
 numeric_id_cols
 ```
 
-No variable name contains "|".
-```{r find_cols_w_pipe}
+<!-- No variable name contains "|". -->
+```{r find_cols_w_pipe, eval=FALSE}
 select(all_data, contains("|"))
 ```
 
-Define a function for calculating the standard deviations and IQRs of all non-trivial numeric variables in a dataset whose names match a pattern. The output has one row for each variable and columns with the summary statistics.
-```{r summary_stats_funcs}
+<!-- Define a function for calculating the standard deviations and IQRs of all non-trivial numeric variables in a dataset whose names match a pattern. The output has one row for each variable and columns with the summary statistics. -->
+```{r summary_stats_funcs, eval=FALSE}
 calc_summary_stats <- function(data, pattern = ".*") {
   data %>%
     select(
@@ -313,8 +198,8 @@ make_summary_stats_plot <- function(summary_stats, title) {
 }
 ```
 
-The histograms below show the log-transformed standard deviations and IQRs of all of the variables. For each staining set, there is a fair amount of variation in scale across variables - some variables are on a much larger scale than others. This means that rescaling before performing PCA is absolutely necessary. Otherwise, the top PCs will largely reflect the variables with the largest scales. For each staining set, the five variables with the largest standard deviations are also shown.
-```{r summary_stats, message=FALSE}
+<!-- The histograms below show the log-transformed standard deviations and IQRs of all of the variables. For each staining set, there is a fair amount of variation in scale across variables - some variables are on a much larger scale than others. This means that rescaling before performing PCA is absolutely necessary. Otherwise, the top PCs will largely reflect the variables with the largest scales. For each staining set, the five variables with the largest standard deviations are also shown. -->
+```{r summary_stats, message=FALSE, eval=FALSE}
 all_summary_stats <- all_data2 %>%
   mutate(
     summary_stats = map(data, calc_summary_stats),
@@ -339,8 +224,8 @@ all_summary_stats %>%
 rm(all_summary_stats)
 ```
 
-The histograms below show the log-transformed standard deviations and IQRs of the AreaShape variables. We again see that the variables differ in scale substantially. 
-```{r areashape_summary_stats, message=FALSE}
+<!-- The histograms below show the log-transformed standard deviations and IQRs of the AreaShape variables. We again see that the variables differ in scale substantially.  -->
+```{r areashape_summary_stats, message=FALSE, eval=FALSE}
 all_summary_stats <- all_data2 %>%
   mutate(
     summary_stats = map(data, calc_summary_stats, pattern = "AreaShape"),
@@ -367,7 +252,7 @@ rm(all_summary_stats)
 
 ## PCA
 
-Define functions for running PCA and plotting the results of PCA.
+<!-- Define functions for running PCA and plotting the results of PCA. -->
 ```{r pca_funcs}
 run_pca <- function(data, pattern = ".*") {
   data %>%
@@ -498,25 +383,14 @@ make_pca_results_plots <- function(pattern = ".*", ss_nums = 1:3) {
 }
 ```
 
-The plots below show that the first 20-30 PCs capture around 95\% of the variation for each staining set.
-```{r pca}
-# all_data2 %>%
-#   mutate(
-#     pca_results = map(data, run_pca),
-#     title = map_chr(
-#       ss_num, ~ str_interp("PCA Results for Staining Set ${.x}")
-#     ),
-#     pca_results_plot = map2(
-#       pca_results, title, make_pca_results_plot, pattern = ".*"
-#     )
-#   ) %>%
-#   with(walk(pca_results_plot, grid.arrange))
+We first ran PCA using all non-trivial numeric variables. We considered a numeric variable to be non-trivial if it wasn't an ID variable, didn't have any missing values, and had more than one unique value. Each variable was centered and scaled beforehand. Because of the differences we observed between staining sets, we carried out PCA separately for the different staining sets. The plots below show the results of PCA for all non-trivial numeric variables. In the left-hand panels, we see that the first 20-30 principal components (PCs) capture around 95\% of the variation for each staining set. The middle panels show the loadings for the first PC. Every PC can be expressed as a linear combination of the original variables; the coefficients in the linear combination are called loadings. Ideally, most loadings would be close to zero, and only a few would have non-trivial magnitudes. Then, interpretation of the PC in terms of the original variables would be simple. However, this was not the case; many of the loadings were non-trivial. The right-hand panels plot the PC2 loading versus the PC1 loading for each variable. It would be interesting if the variables lay in clusters, but this isn't the case below.
 
+```{r pca, cache=TRUE}
 make_pca_results_plots() %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
-Define a function that counts non-trivial numeric columns whose names match a pattern.
+<!-- Define a function that counts non-trivial numeric columns whose names match a pattern. -->
 ```{r count_cols}
 count_cols <- function(data, pattern) {
   data %>%
@@ -548,31 +422,31 @@ all_data2 %>%
 ```
 
 Looking only at the AreaShape variables, fewer than ten PCs account for over 95\% of the variation. In particular, for staining set 2, just four PCs account for that percentage of the variation. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
-```{r areashape_pca}
+```{r areashape_pca, cache=TRUE}
 make_pca_results_plots(pattern = "AreaShape") %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 We next consider the Intensity variables. For staining sets 1 and 2, around five PCs capture 95\% of the variation. However, for staining set 3, 12-13 PCs are needed. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
-```{r intensity_pca}
+```{r intensity_pca, cache=TRUE}
 make_pca_results_plots(pattern = "Intensity") %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
-For the Cycle variables, for each staining set, the top two PCs account for all of the variation.  Plots of the PC1 and PC2 loadings don't seem to reveal anything.
-```{r cycle_pca}
+<!-- For the Cycle variables, for each staining set, the top two PCs account for all of the variation.  Plots of the PC1 and PC2 loadings don't seem to reveal anything. -->
+```{r cycle_pca, cache=TRUE, include=FALSE}
 make_pca_results_plots(pattern = "Cycle") %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
-We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
-```{r gated_pca}
-make_pca_results_plots(pattern = "Intensity", ss_nums = c(1, 3)) %>%
+<!-- We next consider the Gated variables, which weren't measured for staining set 1. For staining set 2, all PCs are needed to capture 95\% of the variation. For staining set 3, five PCs are needed. Plots of the PC1 and PC2 loadings don't seem to reveal anything. -->
+```{r gated_pca, cache=TRUE, include=FALSE}
+make_pca_results_plots(pattern = "Gated", ss_nums = c(2, 3)) %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 The Texture variables were only measured for staining set 2. Six PCs account for 95\% of the variation. The plot of the PC1 and PC2 loadings seems to suggest that the variables can be partitioned into three clusters.
-```{r texture_pca}
+```{r texture_pca, cache=TRUE}
 make_pca_results_plots(pattern = "Texture", ss_nums = 2) %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
@@ -591,19 +465,19 @@ all_data2 %>%
 ```
 
 Looking at the Cells variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 3, the number is nine. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
-```{r cells_pca}
+```{r cells_pca, cache=TRUE}
 make_pca_results_plots(pattern = "Cells", ss_nums = c(1, 3)) %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 Looking at the Cytoplasm variables, for staining set 1, the first eight PCs account for 95\% of the variation. For staining set 3, the number is 15. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
-```{r cytoplasm_pca}
+```{r cytoplasm_pca, cache=TRUE}
 make_pca_results_plots(pattern = "Cytoplasm", ss_nums = c(1, 3)) %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
 
 Looking at the Nuclei variables, for staining set 1, the first seven PCs account for 95\% of the variation. For staining set 2, the number is around 17. For staining set 3, the number is 11. Plots of the PC1 and PC2 loadings don't seem to reveal anything.
-```{r nuclei_pca}
+```{r nuclei_pca, cache=TRUE}
 make_pca_results_plots(pattern = "Nuclei") %>%
   with(walk(pca_results_plot, grid.arrange))
 ```
@@ -663,7 +537,7 @@ make_outlyingness_plots <- function(ss_num,
   outlyingness_obj <- pca_results %>%
     `$`("x") %>%
     `[`(, seq_len(num_pcs)) %>%
-    outlyingness(options = list(type = invariance_type))
+    adjOutl(options = list(type = invariance_type))
 
   plots <- data %>%
     select(plate_num, Well, ArrayColumn, ArrayRow) %>%
@@ -697,7 +571,19 @@ make_outlyingness_plots <- function(ss_num,
 }
 ```
 
-```{r outlyingnesses}
+We sought to identify replicates that could be considered outliers with respect to their staining sets. We performed outlier detection by calculating a skew-adjusted version of a measure of outlyingness called the Stahel-Donoho outlyingness (SDO) for each replicate. In the univariate case, the ordinary SDO of an observation $x_i$ is
+\[
+\text{SDO}(x_i) := \frac{|x_i - \text{med}_j x_j|}{\text{med}_k |x_k - \text{med}_j x_j|}.
+\]
+In the multivariate case, the SDO of $\boldsymbol{x}_i$ is
+\[
+\text{SDO}(\boldsymbol{x}_i) := \sup_{\boldsymbol{u} \in \mathbb{R}^d} \frac{|\boldsymbol{x}_i^T \boldsymbol{u} - \text{med}_j \boldsymbol{x}_j^T \boldsymbol{u}|}{\text{med}_k |\boldsymbol{x}_k^T \boldsymbol{u} - \text{med}_j \boldsymbol{x}_j^T \boldsymbol{u}|}.
+\]
+The measure we used is a robust version of the ordinary multivariate SDO appropriate for skewed data. Since not all directions could be used in the computations, a subset of directions was used that was chosen in a random fashion. As in the dimensionality reduction section, we performed outlier detection for various subsets of the numeric variables.
+
+The plots below show the distribution of the outliers across the wells for each staining set and each variable subset. In most wells, there are few outliers, and they're scattered seemingly randomly across the well. However, in some wells, there are large concentrations of outliers. The reasons for these concentrations are unclear; further investigation is necessary to determine them.
+
+```{r outlyingnesses, cache=TRUE}
 all_data2 %>%
   mutate(
     outlyingness_plots = map2(
@@ -710,13 +596,112 @@ all_data2 %>%
   with(walk(outlyingness_plots, print))
 ```
 
-```{r areashape_outlyingnesses}
+### Outlier Detection by Variable Class
+
+```{r areashape_outlyingnesses, cache=TRUE}
 all_data2 %>%
   mutate(
     outlyingness_plots = map2(
       ss_num, data,
       make_outlyingness_plots,
       pattern = "AreaShape", invariance_type = "Shift", plot_type = "flag"
+    )
+  ) %>%
+  select(!data) %>%
+  with(walk(outlyingness_plots, print))
+```
+
+```{r intensity_outlyingnesses, cache=TRUE}
+all_data2 %>%
+  mutate(
+    outlyingness_plots = map2(
+      ss_num, data,
+      make_outlyingness_plots,
+      pattern = "Intensity", invariance_type = "Shift", plot_type = "flag"
+    )
+  ) %>%
+  select(!data) %>%
+  with(walk(outlyingness_plots, print))
+```
+
+```{r cycle_outlyingnesses, cache=TRUE, eval=FALSE}
+all_data2 %>%
+  mutate(
+    outlyingness_plots = map2(
+      ss_num, data,
+      make_outlyingness_plots,
+      pattern = "Cycle", invariance_type = "Shift", plot_type = "flag"
+    )
+  ) %>%
+  select(!data) %>%
+  with(walk(outlyingness_plots, print))
+```
+
+```{r gated_outlyingnesses, cache=TRUE, eval=FALSE}
+all_data2 %>%
+  filter(ss_num %in% c(1, 3)) %>%
+  mutate(
+    outlyingness_plots = map2(
+      ss_num, data,
+      make_outlyingness_plots,
+      pattern = "Gated", invariance_type = "Shift", plot_type = "flag"
+    )
+  ) %>%
+  select(!data) %>%
+  with(walk(outlyingness_plots, print))
+```
+
+```{r texture_outlyingnesses, cache=TRUE}
+all_data2 %>%
+  filter(ss_num == 2) %>%
+  mutate(
+    outlyingness_plots = map2(
+      ss_num, data,
+      make_outlyingness_plots,
+      pattern = "Texture", invariance_type = "Shift", plot_type = "flag"
+    )
+  ) %>%
+  select(!data) %>%
+  with(walk(outlyingness_plots, print))
+```
+
+### Outlier Detection by Cell Part
+
+```{r cells_outlyingnesses, cache=TRUE}
+all_data2 %>%
+  filter(ss_num %in% c(1, 3)) %>%
+  mutate(
+    outlyingness_plots = map2(
+      ss_num, data,
+      make_outlyingness_plots,
+      pattern = "Cells", invariance_type = "Shift", plot_type = "flag"
+    )
+  ) %>%
+  select(!data) %>%
+  with(walk(outlyingness_plots, print))
+```
+
+```{r cytoplasm_outlyingnesses, cache=TRUE}
+all_data2 %>%
+  filter(ss_num %in% c(1, 3)) %>%
+  mutate(
+    outlyingness_plots = map2(
+      ss_num, data,
+      make_outlyingness_plots,
+      pattern = "Cytoplasm", invariance_type = "Shift", plot_type = "flag"
+    )
+  ) %>%
+  select(!data) %>%
+  with(walk(outlyingness_plots, print))
+```
+
+```{r nuclei_outlyingnesses, cache=TRUE}
+all_data2 %>%
+  mutate(
+    outlyingness_plots = map2(
+      ss_num, data,
+      make_outlyingness_plots,
+      pattern = "Nuclei", invariance_type = "Shift", plot_type = "flag"
     )
   ) %>%
   select(!data) %>%
